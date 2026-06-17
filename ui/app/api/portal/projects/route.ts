@@ -1,0 +1,25 @@
+import { NextRequest, NextResponse } from 'next/server'
+
+const FASTAPI = process.env.FASTAPI_URL ?? 'http://localhost:8000'
+
+export async function GET(req: NextRequest) {
+  const token = req.nextUrl.searchParams.get('token') ?? ''
+  try {
+    const res = await fetch(
+      `${FASTAPI}/api/v1/project/portal/projects?token=${encodeURIComponent(token)}`,
+      { cache: 'no-store' }
+    )
+    const data = await res.json()
+    if (!res.ok) {
+      const detail = data.detail
+      const message = typeof detail === 'string' ? detail : 'Could not load your projects.'
+      return NextResponse.json({ ok: false, message }, { status: res.status })
+    }
+    return NextResponse.json(data)
+  } catch {
+    return NextResponse.json(
+      { ok: false, message: 'Unable to reach the server. Please try again shortly.' },
+      { status: 503 }
+    )
+  }
+}

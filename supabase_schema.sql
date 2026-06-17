@@ -52,6 +52,129 @@ create index if not exists waitlist_email_idx on waitlist (email);
 alter table waitlist enable row level security;
 
 
+-- ── Project submissions (data annotation intake) ──────────────────────────────
+
+create table if not exists project_submissions (
+  id               uuid primary key default gen_random_uuid(),
+  name             text not null,
+  email            text not null,
+  company          text not null,
+  description      text not null,
+  data_type        text,
+  task_type        text,
+  volume           text,
+  timeline         text,
+  data_sensitivity text,
+  sample_link      text,
+  budget_notes     text,
+  status           text not null default 'new', -- new | scoping | active | delivered | closed
+  created_at       timestamptz not null default now()
+);
+
+create index if not exists project_submissions_email_idx  on project_submissions (email);
+create index if not exists project_submissions_status_idx on project_submissions (status);
+
+-- Customer-portal pipeline stage (added after initial launch; safe to re-run).
+-- submitted | scoping | agreement | pilot | production | delivered
+alter table project_submissions add column if not exists stage      text not null default 'submitted';
+alter table project_submissions add column if not exists stage_note  text;
+alter table project_submissions add column if not exists updated_at  timestamptz not null default now();
+
+-- RLS: service key only, same as the other tables.
+alter table project_submissions enable row level security;
+
+
+-- ── Project items (the units of work labeled on the platform) ─────────────────
+
+create table if not exists project_items (
+  id          uuid primary key default gen_random_uuid(),
+  project_id  uuid not null references project_submissions(id) on delete cascade,
+  idx         int  not null default 0,
+  content     jsonb not null default '{}'::jsonb,   -- e.g. {"prompt": "...", "output": "..."}
+  status      text not null default 'pending',      -- pending | done
+  label       jsonb,                                -- e.g. {"score": 4, "unsafe": false, "rationale": "..."}
+  labeled_by  text,
+  labeled_at  timestamptz,
+  created_at  timestamptz not null default now()
+);
+
+create index if not exists project_items_project_idx on project_items (project_id);
+create index if not exists project_items_status_idx  on project_items (project_id, status);
+
+-- Multi-clinician claiming + attribution (status: pending | in_progress | done)
+alter table project_items add column if not exists assigned_to text;
+alter table project_items add column if not exists claimed_at  timestamptz;
+
+alter table project_items enable row level security;
+
+
+-- ── Clinicians (the people who label) ─────────────────────────────────────────
+
+create table if not exists clinicians (
+  id          uuid primary key default gen_random_uuid(),
+  name        text not null,
+  email       text,
+  access_code text not null unique,
+  active      boolean not null default true,
+  created_at  timestamptz not null default now()
+);
+
+create index if not exists clinicians_code_idx on clinicians (access_code);
+
+alter table clinicians enable row level security;
+
+
+-- ── Atomic task claim (the concurrency-safe work queue) ───────────────────────
+-- Reclaims stale claims, returns the labeler's held item if any, else claims the
+-- next pending item using FOR UPDATE SKIP LOCKED so two labelers never collide.
+
+create or replace function claim_next_item(p_project uuid, p_labeler text, p_ttl_minutes int default 20)
+returns table (id uuid, idx int, content jsonb)
+language plpgsql
+as $$
+declare
+  v_id uuid;
+begin
+  update project_items
+     set status = 'pending', assigned_to = null, claimed_at = null
+   where project_id = p_project
+     and status = 'in_progress'
+     and claimed_at < now() - make_interval(mins => p_ttl_minutes);
+
+  select pi.id into v_id
+    from project_items pi
+   where pi.project_id = p_project
+     and pi.status = 'in_progress'
+     and pi.assigned_to = p_labeler
+   order by pi.idx
+   limit 1;
+
+  if v_id is null then
+    select pi.id into v_id
+      from project_items pi
+     where pi.project_id = p_project
+       and pi.status = 'pending'
+     order by pi.idx
+     for update skip locked
+     limit 1;
+
+    if v_id is not null then
+      update project_items
+         set status = 'in_progress', assigned_to = p_labeler, claimed_at = now()
+       where project_items.id = v_id;
+    end if;
+  end if;
+
+  if v_id is null then
+    return;
+  end if;
+
+  return query
+    select pi.id, pi.idx, pi.content from project_items pi where pi.id = v_id;
+end;
+$$;
+
+
 -- ── Useful admin views (run separately if wanted) ─────────────────────────────
 
 -- Pending applications (for quick review)

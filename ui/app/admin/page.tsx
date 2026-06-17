@@ -1,0 +1,476 @@
+'use client'
+import { useEffect, useState, useCallback } from 'react'
+import { parseDataset, type ParsedDataset } from '../lib/dataset'
+
+const STAGES = ['submitted', 'scoping', 'agreement', 'pilot', 'production', 'delivered']
+const STORAGE_KEY = 'senebiclabs_admin_key'
+
+type Submission = {
+  id: string
+  name: string | null
+  email: string | null
+  company: string | null
+  description: string | null
+  task_type: string | null
+  volume: string | null
+  timeline: string | null
+  stage: string | null
+  stage_note: string | null
+  status: string | null
+  created_at: string | null
+  updated_at: string | null
+  total?: number
+  done?: number
+}
+
+type Edit = { stage: string; note: string }
+
+type Clinician = {
+  id: string
+  name: string
+  email: string | null
+  access_code: string
+  active: boolean
+  created_at: string | null
+}
+
+const page: React.CSSProperties = {
+  minHeight: '100vh',
+  background: '#ffffff',
+  color: '#0f172a',
+}
+const card: React.CSSProperties = {
+  border: '1px solid #e6e8eb',
+  borderRadius: 14,
+  padding: 26,
+  marginBottom: 18,
+  background: '#ffffff',
+  boxShadow: '0 1px 2px rgba(15,23,42,0.04)',
+}
+const input: React.CSSProperties = {
+  background: '#ffffff',
+  border: '1px solid #d6dae0',
+  borderRadius: 8,
+  padding: '11px 13px',
+  color: '#0f172a',
+  fontFamily: 'inherit',
+  fontSize: 14,
+  outline: 'none',
+}
+const btn: React.CSSProperties = {
+  background: '#15a34a',
+  color: '#ffffff',
+  border: 'none',
+  borderRadius: 8,
+  padding: '11px 18px',
+  fontSize: 13.5,
+  fontWeight: 600,
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+}
+const label: React.CSSProperties = {
+  fontFamily: 'Geist Mono, monospace',
+  fontSize: 10.5,
+  letterSpacing: '0.12em',
+  textTransform: 'uppercase',
+  color: '#64748b',
+}
+const dropzone: React.CSSProperties = {
+  display: 'block',
+  border: '1px dashed #cbd1d8',
+  borderRadius: 12,
+  padding: '32px 20px',
+  textAlign: 'center',
+  cursor: 'pointer',
+  background: '#fafbfc',
+}
+
+export default function AdminPage() {
+  const [key, setKey] = useState('')
+  const [authed, setAuthed] = useState(false)
+  const [keyInput, setKeyInput] = useState('')
+  const [subs, setSubs] = useState<Submission[]>([])
+  const [edits, setEdits] = useState<Record<string, Edit>>({})
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [savingId, setSavingId] = useState<string | null>(null)
+  const [savedId, setSavedId] = useState<string | null>(null)
+  const [openId, setOpenId] = useState<string | null>(null)
+  const [progress, setProgress] = useState<Record<string, { total: number; done: number }>>({})
+  const [parsed, setParsed] = useState<Record<string, ParsedDataset & { filename: string }>>({})
+  const [parseErr, setParseErr] = useState<Record<string, string>>({})
+  const [addingId, setAddingId] = useState<string | null>(null)
+  const [addMsg, setAddMsg] = useState<Record<string, string>>({})
+  const [clinicians, setClinicians] = useState<Clinician[]>([])
+  const [cName, setCName] = useState('')
+  const [cEmail, setCEmail] = useState('')
+  const [creatingC, setCreatingC] = useState(false)
+  const [cMsg, setCMsg] = useState('')
+  const [pickClin, setPickClin] = useState<Record<string, string>>({})
+  const [copied, setCopied] = useState<string | null>(null)
+
+  const load = useCallback(async (k: string) => {
+    setLoading(true)
+    setError('')
+    try {
+      const res = await fetch('/api/admin/submissions', { headers: { 'x-admin-key': k } })
+      const data = await res.json()
+      if (!data.ok) throw new Error(data.message ?? 'Could not load.')
+      const list: Submission[] = data.submissions ?? []
+      setSubs(list)
+      setEdits(Object.fromEntries(list.map(s => [s.id, { stage: s.stage ?? 'submitted', note: s.stage_note ?? '' }])))
+      setAuthed(true)
+      setKey(k)
+      localStorage.setItem(STORAGE_KEY, k)
+      try {
+        const cr = await fetch('/api/admin/clinicians', { headers: { 'x-admin-key': k } })
+        const cd = await cr.json()
+        if (cd.ok) setClinicians(cd.clinicians ?? [])
+      } catch { /* ignore */ }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Could not load.')
+      setAuthed(false)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    const saved = localStorage.getItem(STORAGE_KEY)
+    if (saved) load(saved)
+  }, [load])
+
+  const update = async (id: string) => {
+    const edit = edits[id]
+    if (!edit) return
+    setSavingId(id)
+    setError('')
+    try {
+      const res = await fetch('/api/admin/advance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-key': key },
+        body: JSON.stringify({ submission_id: id, stage: edit.stage, note: edit.note || null }),
+      })
+      const data = await res.json()
+      if (!data.ok) throw new Error(data.message ?? 'Update failed.')
+      setSubs(prev => prev.map(s => (s.id === id ? { ...s, stage: edit.stage, stage_note: edit.note } : s)))
+      setSavedId(id)
+      setTimeout(() => setSavedId(p => (p === id ? null : p)), 2000)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Update failed.')
+    } finally {
+      setSavingId(null)
+    }
+  }
+
+  const logout = () => {
+    localStorage.removeItem(STORAGE_KEY)
+    setAuthed(false)
+    setKey('')
+    setSubs([])
+    setClinicians([])
+  }
+
+  const fetchProgress = useCallback(async (id: string, k: string) => {
+    try {
+      const res = await fetch(`/api/admin/progress?project=${id}`, { headers: { 'x-admin-key': k } })
+      const data = await res.json()
+      if (data.ok) setProgress(p => ({ ...p, [id]: { total: data.total, done: data.done } }))
+    } catch { /* ignore */ }
+  }, [])
+
+  const toggleItems = (id: string) => {
+    const opening = openId !== id
+    setOpenId(opening ? id : null)
+    if (opening) fetchProgress(id, key)
+  }
+
+  const onFile = async (id: string, file: File) => {
+    setParseErr(e => ({ ...e, [id]: '' }))
+    setAddMsg(m => ({ ...m, [id]: '' }))
+    try {
+      const text = await file.text()
+      const { items, columns } = parseDataset(file.name, text)
+      if (!items.length) throw new Error('No rows found in that file.')
+      setParsed(p => ({ ...p, [id]: { items, columns, filename: file.name } }))
+    } catch (err: unknown) {
+      setParsed(p => { const n = { ...p }; delete n[id]; return n })
+      setParseErr(e => ({ ...e, [id]: err instanceof Error ? err.message : 'Could not read that file.' }))
+    }
+  }
+
+  const clearParsed = (id: string) =>
+    setParsed(p => { const n = { ...p }; delete n[id]; return n })
+
+  const addParsed = async (id: string) => {
+    const p = parsed[id]
+    if (!p) return
+    setAddingId(id)
+    try {
+      const res = await fetch('/api/admin/items', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-key': key },
+        body: JSON.stringify({ project_id: id, items: p.items }),
+      })
+      const data = await res.json()
+      if (!data.ok) throw new Error(data.message ?? 'Failed')
+      setAddMsg(m => ({ ...m, [id]: data.message }))
+      clearParsed(id)
+      fetchProgress(id, key)
+    } catch (err: unknown) {
+      setAddMsg(m => ({ ...m, [id]: err instanceof Error ? err.message : 'Failed' }))
+    } finally {
+      setAddingId(null)
+    }
+  }
+
+  const exportProject = async (id: string, company: string | null) => {
+    const res = await fetch(`/api/admin/export?project=${id}`, { headers: { 'x-admin-key': key } })
+    const data = await res.json()
+    if (!data.ok) return
+    const blob = new Blob([JSON.stringify(data.items, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${(company || 'project').replace(/\s+/g, '_')}_labels.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const prog = (s: Submission) => progress[s.id] ?? { total: s.total ?? 0, done: s.done ?? 0 }
+  const stageLocked = (st: string, p: { total: number; done: number }) =>
+    ((st === 'pilot' || st === 'production') && p.total === 0) ||
+    (st === 'delivered' && (p.total === 0 || p.done < p.total))
+
+  const createClinician = async () => {
+    if (!cName.trim() || creatingC) return
+    setCreatingC(true); setCMsg('')
+    try {
+      const res = await fetch('/api/admin/clinicians', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-key': key },
+        body: JSON.stringify({ name: cName.trim(), email: cEmail.trim() || null }),
+      })
+      const data = await res.json()
+      if (!data.ok) throw new Error(data.message ?? 'Failed')
+      setCMsg(`Added ${data.clinician.name}`)
+      setCName(''); setCEmail('')
+      const cr = await fetch('/api/admin/clinicians', { headers: { 'x-admin-key': key } })
+      const cd = await cr.json()
+      if (cd.ok) setClinicians(cd.clinicians ?? [])
+    } catch (err: unknown) {
+      setCMsg(err instanceof Error ? err.message : 'Failed')
+    } finally {
+      setCreatingC(false)
+    }
+  }
+
+  const copyLink = (projectId: string, code: string) => {
+    const link = `${window.location.origin}/work?project=${projectId}&code=${code}`
+    navigator.clipboard?.writeText(link)
+    const tag = projectId + code
+    setCopied(tag)
+    setTimeout(() => setCopied(c => (c === tag ? null : c)), 2000)
+  }
+
+  // ── Key gate ──────────────────────────────────────────────────────────────
+  if (!authed) {
+    return (
+      <main style={{ ...page, display: 'grid', placeItems: 'center', padding: 24 }}>
+        <form
+          onSubmit={e => { e.preventDefault(); if (keyInput.trim()) load(keyInput.trim()) }}
+          style={{ width: '100%', maxWidth: 360, display: 'flex', flexDirection: 'column', gap: 16 }}
+        >
+          <h1 style={{ fontFamily: 'Geist, sans-serif', fontWeight: 500, fontSize: 26 }}>Admin</h1>
+          <input
+            style={input}
+            type="password"
+            placeholder="Admin key"
+            value={keyInput}
+            onChange={e => setKeyInput(e.target.value)}
+            autoFocus
+          />
+          <button style={btn} type="submit" disabled={loading}>{loading ? 'Checking…' : 'Enter'}</button>
+          {error && <p style={{ color: '#dc2626', fontSize: 13 }}>{error}</p>}
+        </form>
+      </main>
+    )
+  }
+
+  // ── Dashboard ─────────────────────────────────────────────────────────────
+  return (
+    <div style={page}>
+    <main style={{ maxWidth: 880, margin: '0 auto', padding: '48px 24px 96px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <h1 style={{ fontFamily: 'Geist, sans-serif', fontWeight: 500, fontSize: 30 }}>Projects</h1>
+        <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+          <button onClick={() => load(key)} style={{ ...label, background: 'none', border: 'none', cursor: 'pointer' }}>Refresh</button>
+          <button onClick={logout} style={{ ...label, background: 'none', border: 'none', cursor: 'pointer' }}>Sign out</button>
+        </div>
+      </div>
+      <p style={{ ...label, marginBottom: 28 }}>{subs.length} total</p>
+
+      {/* Clinicians */}
+      <div style={{ ...card, marginBottom: 30 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 16 }}>
+          <h2 style={{ fontSize: 16, fontWeight: 600 }}>Clinicians</h2>
+          <span style={label}>{clinicians.length}</span>
+        </div>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+          <input style={{ ...input, minWidth: 150 }} placeholder="Name" value={cName} onChange={e => setCName(e.target.value)} />
+          <input style={{ ...input, minWidth: 180 }} placeholder="Email (optional)" value={cEmail} onChange={e => setCEmail(e.target.value)} />
+          <button style={btn} onClick={createClinician} disabled={creatingC || !cName.trim()}>{creatingC ? 'Adding…' : 'Add clinician'}</button>
+          {cMsg && <span style={{ ...label, color: '#15a34a' }}>{cMsg}</span>}
+        </div>
+        {clinicians.map(c => (
+          <div key={c.id} style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '10px 0', borderTop: '1px solid #eef0f2', flexWrap: 'wrap', marginTop: 4 }}>
+            <span style={{ fontSize: 14, fontWeight: 500, minWidth: 130 }}>{c.name}</span>
+            {c.email && <span style={{ fontSize: 13, color: '#475569' }}>{c.email}</span>}
+            <code style={{ marginLeft: 'auto', fontFamily: 'Geist Mono, monospace', fontSize: 12.5, color: '#0f172a', background: '#f8fafc', border: '1px solid #eef0f2', borderRadius: 6, padding: '4px 9px' }}>{c.access_code}</code>
+          </div>
+        ))}
+      </div>
+
+      {error && <p style={{ color: '#dc2626', fontSize: 14, marginBottom: 20 }}>{error}</p>}
+      {loading && <p style={{ color: '#475569', fontSize: 15 }}>Loading…</p>}
+
+      {!loading && subs.length === 0 && (
+        <p style={{ color: '#475569', fontSize: 15 }}>No submissions yet.</p>
+      )}
+
+      {subs.map(s => {
+        const edit = edits[s.id] ?? { stage: 'submitted', note: '' }
+        const p = prog(s)
+        return (
+          <div key={s.id} style={card}>
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+              <h2 style={{ fontSize: 20, fontWeight: 600 }}>{s.company || '—'}</h2>
+              <span style={{ ...label, color: '#15a34a' }}>{s.stage ?? 'submitted'}</span>
+            </div>
+            <p style={{ fontSize: 14, color: '#475569', marginTop: 4 }}>
+              {s.name} · <a href={`mailto:${s.email}`} style={{ color: '#0f172a' }}>{s.email}</a>
+              {s.created_at && <> · {new Date(s.created_at).toLocaleDateString()}</>}
+            </p>
+
+            {s.task_type && <p style={{ fontSize: 14, color: '#0f172a', marginTop: 12 }}><span style={label}>Wants </span>{s.task_type}</p>}
+            {s.description && <p style={{ fontSize: 14.5, lineHeight: 1.6, color: '#0f172a', marginTop: 10, whiteSpace: 'pre-wrap' }}>{s.description}</p>}
+
+            <div style={{ display: 'flex', gap: 10, marginTop: 20, flexWrap: 'wrap', alignItems: 'center' }}>
+              <select
+                style={{ ...input, cursor: 'pointer' }}
+                value={edit.stage}
+                onChange={e => setEdits(pp => ({ ...pp, [s.id]: { ...edit, stage: e.target.value } }))}
+              >
+                {STAGES.map(st => {
+                  const locked = stageLocked(st, p)
+                  return (
+                    <option key={st} value={st} disabled={locked} style={{ background: '#ffffff', color: locked ? '#9aa1a9' : '#0f172a' }}>
+                      {st}{locked ? ' — locked' : ''}
+                    </option>
+                  )
+                })}
+              </select>
+              <input
+                style={{ ...input, flex: 1, minWidth: 200 }}
+                placeholder="Note shown to the customer (optional)"
+                value={edit.note}
+                onChange={e => setEdits(pp => ({ ...pp, [s.id]: { ...edit, note: e.target.value } }))}
+              />
+              <button style={btn} onClick={() => update(s.id)} disabled={savingId === s.id}>
+                {savingId === s.id ? 'Saving…' : savedId === s.id ? 'Saved ✓' : 'Update'}
+              </button>
+            </div>
+            {(p.total === 0 || p.done < p.total) && (
+              <p style={{ ...label, color: '#94a3b8', marginTop: 8 }}>
+                {p.total === 0 ? 'Add items to unlock pilot / production / delivered' : `Label all items (${p.done}/${p.total}) to unlock delivered`}
+              </p>
+            )}
+
+            {/* Work: items, queue, export */}
+            <div style={{ marginTop: 18, paddingTop: 18, borderTop: '1px solid #eef0f2', display: 'flex', gap: 18, alignItems: 'center', flexWrap: 'wrap' }}>
+              <button onClick={() => toggleItems(s.id)} style={{ ...label, background: 'none', border: 'none', cursor: 'pointer' }}>
+                {openId === s.id ? 'Hide items ▲' : 'Add items ▼'}
+              </button>
+              <a href={`/work?project=${s.id}`} style={{ ...label, color: '#15a34a', textDecoration: 'none' }}>Work queue →</a>
+              <button onClick={() => exportProject(s.id, s.company)} style={{ ...label, background: 'none', border: 'none', cursor: 'pointer' }}>Export labels ↓</button>
+              {p.total > 0 && <span style={label}>{p.done}/{p.total} labeled</span>}
+              {clinicians.length > 0 && (
+                <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center', marginLeft: 'auto' }}>
+                  <select
+                    value={pickClin[s.id] ?? ''}
+                    onChange={e => setPickClin(pc => ({ ...pc, [s.id]: e.target.value }))}
+                    style={{ ...input, padding: '6px 10px', fontSize: 12.5, cursor: 'pointer' }}
+                  >
+                    <option value="">Clinician link…</option>
+                    {clinicians.map(c => <option key={c.id} value={c.access_code}>{c.name}</option>)}
+                  </select>
+                  {pickClin[s.id] && (
+                    <button onClick={() => copyLink(s.id, pickClin[s.id])} style={{ ...label, background: 'none', border: 'none', cursor: 'pointer', color: '#15a34a' }}>
+                      {copied === s.id + pickClin[s.id] ? 'Copied ✓' : 'Copy link'}
+                    </button>
+                  )}
+                </span>
+              )}
+            </div>
+
+            {openId === s.id && (
+              <div style={{ marginTop: 16 }}>
+                {!parsed[s.id] ? (
+                  <>
+                    <label
+                      style={dropzone}
+                      onDragOver={e => e.preventDefault()}
+                      onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) onFile(s.id, f) }}
+                    >
+                      <input
+                        type="file"
+                        accept=".csv,.json,text/csv,application/json"
+                        style={{ display: 'none' }}
+                        onChange={e => { const f = e.target.files?.[0]; if (f) onFile(s.id, f); e.target.value = '' }}
+                      />
+                      <span style={{ color: '#0f172a', fontWeight: 500, fontSize: 15 }}>Drop a CSV or JSON file</span>
+                      <span style={{ display: 'block', marginTop: 6, fontSize: 13, color: '#475569' }}>
+                        or click to browse — each row becomes one task
+                      </span>
+                    </label>
+                    {parseErr[s.id] && <p style={{ color: '#dc2626', fontSize: 13, marginTop: 10 }}>{parseErr[s.id]}</p>}
+                  </>
+                ) : (
+                  <div style={{ border: '1px solid #e6e8eb', borderRadius: 12, padding: 18 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 15, fontWeight: 600 }}>{parsed[s.id].filename}</span>
+                      <span style={{ ...label, color: '#15a34a' }}>{parsed[s.id].items.length} items</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 12 }}>
+                      {parsed[s.id].columns.map(col => (
+                        <span key={col} style={{ ...label, border: '1px solid #e6e8eb', borderRadius: 999, padding: '4px 10px' }}>{col}</span>
+                      ))}
+                    </div>
+                    <div style={{ marginTop: 14, padding: '12px 14px', background: '#f8fafc', borderRadius: 8, border: '1px solid #eef0f2' }}>
+                      {Object.entries(parsed[s.id].items[0]).slice(0, 4).map(([k, v]) => (
+                        <div key={k} style={{ fontSize: 12.5, marginBottom: 4, lineHeight: 1.5 }}>
+                          <span style={{ color: '#64748b', fontFamily: 'Geist Mono, monospace' }}>{k}: </span>
+                          <span style={{ color: '#0f172a' }}>{String(v).slice(0, 140)}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{ display: 'flex', gap: 14, marginTop: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <button style={btn} onClick={() => addParsed(s.id)} disabled={addingId === s.id}>
+                        {addingId === s.id ? 'Adding…' : `Add ${parsed[s.id].items.length} items to queue`}
+                      </button>
+                      <button onClick={() => clearParsed(s.id)} style={{ ...label, background: 'none', border: 'none', cursor: 'pointer' }}>
+                        Choose another file
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {addMsg[s.id] && <p style={{ ...label, color: '#15a34a', marginTop: 12 }}>{addMsg[s.id]}</p>}
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </main>
+    </div>
+  )
+}

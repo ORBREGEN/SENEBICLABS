@@ -49,6 +49,12 @@ class Settings(BaseSettings):
     # Analyse access token — gates the /analyse research interface
     ANALYSE_ACCESS_TOKEN: str | None = None
 
+    # Public site URL — used to build customer portal magic-link emails
+    SITE_URL: str = "https://senebiclabs.com"
+
+    # Portal magic-link signing secret — falls back to the Supabase service key
+    PORTAL_SECRET: str | None = None
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 

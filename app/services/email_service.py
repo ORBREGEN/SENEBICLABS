@@ -139,6 +139,72 @@ def send_expert_rejected(*, name: str, email: str) -> None:
     _send(to=email, subject="Your Senebiclabs application", html=html)
 
 
+# ── Project submission (data annotation) ───────────────────────────────────────
+
+def send_project_submission_confirmation(*, name: str, email: str) -> None:
+    html = _base(f"""
+      <h2 style="font-size:22px;font-weight:400;margin:0 0 16px;">Thanks, {name}.</h2>
+      <p style="font-size:16px;line-height:1.7;color:#333;margin:0 0 32px;">
+        We have received your project. Our team will review it and be in touch within one
+        business day to scope a pilot.
+      </p>
+      <p style="font-size:14px;color:#666;line-height:1.6;">
+        Questions? Reply to this email and we will get back to you.
+      </p>
+    """)
+    _send(to=email, subject="We received your project — Senebiclabs", html=html)
+
+
+def send_project_submission_admin_alert(*, submission) -> None:
+    def _row(label: str, value) -> str:
+        return (f"<tr><td style='padding:6px 12px 6px 0;color:#666;'>{label}</td>"
+                f"<td style='padding:6px 0;'>{value or '—'}</td></tr>")
+    html = _base(f"""
+      <h2 style="font-size:22px;font-weight:400;margin:0 0 32px;">New project submission</h2>
+      <table style="width:100%;border-collapse:collapse;font-size:15px;">
+        {_row('Company', submission.company)}
+        {_row('Name', submission.name)}
+        {_row('Email', submission.email)}
+        {_row('Data type', submission.data_type)}
+        {_row('Task type', submission.task_type)}
+        {_row('Volume', submission.volume)}
+        {_row('Timeline', submission.timeline)}
+        {_row('Sensitivity', submission.data_sensitivity)}
+        {_row('Sample', submission.sample_link)}
+      </table>
+      <p style="font-size:14px;color:#333;line-height:1.6;margin:20px 0 0;white-space:pre-wrap;">{submission.description}</p>
+      <div style="margin-top:32px;">
+        <a href="{settings.SUPABASE_URL.replace('.supabase.co','').replace('https://','https://supabase.com/dashboard/project/')}/editor"
+           style="display:inline-block;background:#111;color:#fff;padding:10px 20px;
+                  border-radius:6px;font-size:13px;text-decoration:none;">
+          View in Supabase →
+        </a>
+      </div>
+    """)
+    _send(to=settings.ADMIN_EMAIL, subject=f"New project — {submission.company}", html=html)
+
+
+def send_portal_link(*, email: str, link: str) -> None:
+    html = _base(f"""
+      <h2 style="font-size:22px;font-weight:400;margin:0 0 16px;">Your project portal</h2>
+      <p style="font-size:16px;line-height:1.7;color:#333;margin:0 0 28px;">
+        Click below to view the status of your project with Senebiclabs. This link
+        works for 14 days and is tied to this email address.
+      </p>
+      <div style="margin:0 0 28px;">
+        <a href="{link}"
+           style="display:inline-block;background:#111;color:#fff;padding:13px 26px;
+                  border-radius:8px;font-size:14px;text-decoration:none;">
+          Open my project →
+        </a>
+      </div>
+      <p style="font-size:13px;color:#666;line-height:1.6;">
+        If you did not request this, you can safely ignore this email.
+      </p>
+    """)
+    _send(to=email, subject="Your Senebiclabs project portal", html=html)
+
+
 # ── Waitlist ───────────────────────────────────────────────────────────────────
 
 _WAITLIST_MESSAGES = {

@@ -12,11 +12,11 @@ const LINKS: { label: string; href: string; page: Page }[] = [
   { label: 'About',       href: '/about',      page: 'about'      },
 ]
 
-export default function NavBar({ active }: { active?: Page }) {
+export default function NavBar({ active, onLight }: { active?: Page; onLight?: boolean }) {
   const [open, setOpen] = useState(false)
 
   return (
-    <nav className={`top scrolled${open ? ' nav-open' : ''}`}>
+    <nav className={`top scrolled${open ? ' nav-open' : ''}${onLight ? ' nav-on-light' : ''}`}>
       <div className="wrap row">
 
         <a className="brand" href="/" onClick={() => setOpen(false)}>
