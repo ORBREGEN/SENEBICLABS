@@ -1,0 +1,5 @@
+# Caddy fetches and renews a free Let's Encrypt certificate for this domain
+# automatically, and reverse-proxies to Label Studio. Nothing else to configure.
+{$LS_DOMAIN} {
+    reverse_proxy label-studio:8080
+}
