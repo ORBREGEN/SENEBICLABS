@@ -7,7 +7,7 @@ To add a new feature area:
 """
 
 from fastapi import APIRouter
-from app.api.v1 import system, model, patient, interpret, expert, waitlist, project
+from app.api.v1 import system, model, patient, interpret, expert, waitlist, project, ls
 
 api_router = APIRouter()
 
@@ -18,3 +18,4 @@ api_router.include_router(patient.router)
 api_router.include_router(expert.router)
 api_router.include_router(waitlist.router)
 api_router.include_router(project.router)
+api_router.include_router(ls.router)

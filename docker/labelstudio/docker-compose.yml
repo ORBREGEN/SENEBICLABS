@@ -1,0 +1,31 @@
+services:
+  ls-db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: labelstudio
+      POSTGRES_USER: ls
+      POSTGRES_PASSWORD: ${LS_DB_PASSWORD}
+    volumes: [ ls-pgdata:/var/lib/postgresql/data ]
+    restart: unless-stopped
+
+  label-studio:
+    image: heartexlabs/label-studio:latest
+    depends_on: [ ls-db ]
+    environment:
+      DJANGO_DB: default
+      POSTGRE_NAME: labelstudio
+      POSTGRE_USER: ls
+      POSTGRE_PASSWORD: ${LS_DB_PASSWORD}
+      POSTGRE_HOST: ls-db
+      POSTGRE_PORT: 5432
+      LABEL_STUDIO_HOST: ${LABEL_STUDIO_HOST}             # public URL (or http://localhost:8080 for local)
+      LABEL_STUDIO_USERNAME: ${LS_ADMIN_EMAIL}             # bootstrap admin
+      LABEL_STUDIO_PASSWORD: ${LS_ADMIN_PASSWORD}
+      LABEL_STUDIO_DISABLE_SIGNUP_WITHOUT_LINK: "true"     # no open signups
+    volumes: [ ls-files:/label-studio/data ]
+    ports: [ "8080:8080" ]
+    restart: unless-stopped
+
+volumes:
+  ls-pgdata:
+  ls-files:

@@ -80,6 +80,11 @@ alter table project_submissions add column if not exists stage      text not nul
 alter table project_submissions add column if not exists stage_note  text;
 alter table project_submissions add column if not exists updated_at  timestamptz not null default now();
 
+-- Label Studio link + per-project pay/difficulty (added later; safe to re-run).
+alter table project_submissions add column if not exists ls_project_id integer;
+alter table project_submissions add column if not exists rate_per_item numeric;
+alter table project_submissions add column if not exists difficulty    text;
+
 -- RLS: service key only, same as the other tables.
 alter table project_submissions enable row level security;
 

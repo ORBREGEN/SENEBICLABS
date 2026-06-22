@@ -4,6 +4,20 @@ import { parseDataset, type ParsedDataset } from '../lib/dataset'
 
 const STAGES = ['submitted', 'scoping', 'agreement', 'pilot', 'production', 'delivered']
 const STORAGE_KEY = 'senebiclabs_admin_key'
+// value, label, required data columns
+const LS_TASK_TYPES: [string, string, string][] = [
+  ['eval_rating', 'Rate response (1–5)', 'prompt, output'],
+  ['rubric_eval', 'Rubric evaluation (multi-axis)', 'prompt, output'],
+  ['preference', 'Compare A / B', 'prompt, output_a, output_b'],
+  ['response_writing', 'Write ideal answer', 'prompt'],
+  ['safety_review', 'Safety review', 'prompt, output'],
+  ['error_annotation', 'Error annotation (highlight)', 'prompt, output'],
+  ['fact_verification', 'Fact verification (highlight)', 'prompt, output'],
+  ['de_identification', 'De-identify PHI (highlight)', 'text'],
+  ['clinical_extraction', 'Clinical extraction (NER)', 'text'],
+  ['classification', 'Classify text', 'text'],
+]
+const TASK_COLUMNS = Object.fromEntries(LS_TASK_TYPES.map(([v, , cols]) => [v, cols]))
 
 type Submission = {
   id: string
@@ -21,6 +35,8 @@ type Submission = {
   updated_at: string | null
   total?: number
   done?: number
+  rate_per_item: number | null
+  difficulty: string | null
 }
 
 type Edit = { stage: string; note: string }
@@ -108,6 +124,12 @@ export default function AdminPage() {
   const [cMsg, setCMsg] = useState('')
   const [pickClin, setPickClin] = useState<Record<string, string>>({})
   const [copied, setCopied] = useState<string | null>(null)
+  const [lsSyncing, setLsSyncing] = useState<string | null>(null)
+  const [lsMsg, setLsMsg] = useState<Record<string, string>>({})
+  const [lsType, setLsType] = useState<Record<string, string>>({})
+  const [meta, setMeta] = useState<Record<string, { rate: string; difficulty: string }>>({})
+  const [metaSaving, setMetaSaving] = useState<string | null>(null)
+  const [metaMsg, setMetaMsg] = useState<Record<string, string>>({})
 
   const load = useCallback(async (k: string) => {
     setLoading(true)
@@ -265,12 +287,74 @@ export default function AdminPage() {
     }
   }
 
+  const mrate = (s: Submission) => meta[s.id]?.rate ?? (s.rate_per_item != null ? String(s.rate_per_item) : '')
+  const mdiff = (s: Submission) => meta[s.id]?.difficulty ?? s.difficulty ?? ''
+
+  const saveMeta = async (s: Submission) => {
+    setMetaSaving(s.id); setMetaMsg(m => ({ ...m, [s.id]: '' }))
+    try {
+      const rate = mrate(s).trim()
+      const res = await fetch('/api/admin/project-meta', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-key': key },
+        body: JSON.stringify({ project_id: s.id, rate_per_item: rate ? parseFloat(rate) : null, difficulty: mdiff(s) || null }),
+      })
+      const data = await res.json()
+      if (!data.ok) throw new Error(data.message ?? 'Failed')
+      setMetaMsg(m => ({ ...m, [s.id]: 'Saved ✓' }))
+      setTimeout(() => setMetaMsg(m => ({ ...m, [s.id]: '' })), 1600)
+    } catch (err: unknown) {
+      setMetaMsg(m => ({ ...m, [s.id]: err instanceof Error ? err.message : 'Failed' }))
+    } finally {
+      setMetaSaving(null)
+    }
+  }
+
   const copyLink = (projectId: string, code: string) => {
     const link = `${window.location.origin}/work?project=${projectId}&code=${code}`
     navigator.clipboard?.writeText(link)
     const tag = projectId + code
     setCopied(tag)
     setTimeout(() => setCopied(c => (c === tag ? null : c)), 2000)
+  }
+
+  const lsSync = async (id: string) => {
+    setLsSyncing(id)
+    setLsMsg(m => ({ ...m, [id]: '' }))
+    try {
+      const res = await fetch('/api/admin/ls-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-key': key },
+        body: JSON.stringify({ project_id: id, task_type: lsType[id] || 'eval_rating' }),
+      })
+      const data = await res.json()
+      if (!data.ok) throw new Error(data.message ?? 'Sync failed.')
+      setLsMsg(m => ({ ...m, [id]: `Sent ${data.pushed} tasks to Label Studio` }))
+    } catch (err: unknown) {
+      setLsMsg(m => ({ ...m, [id]: err instanceof Error ? err.message : 'Sync failed.' }))
+    } finally {
+      setLsSyncing(null)
+    }
+  }
+
+  const lsPull = async (id: string) => {
+    setLsSyncing(id)
+    setLsMsg(m => ({ ...m, [id]: '' }))
+    try {
+      const res = await fetch('/api/admin/ls-pull', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-key': key },
+        body: JSON.stringify({ project_id: id }),
+      })
+      const data = await res.json()
+      if (!data.ok) throw new Error(data.message ?? 'Pull failed.')
+      setLsMsg(m => ({ ...m, [id]: `Pulled ${data.pulled} labeled items back` }))
+      load(key)
+    } catch (err: unknown) {
+      setLsMsg(m => ({ ...m, [id]: err instanceof Error ? err.message : 'Pull failed.' }))
+    } finally {
+      setLsSyncing(null)
+    }
   }
 
   // ── Key gate ──────────────────────────────────────────────────────────────
@@ -393,7 +477,22 @@ export default function AdminPage() {
               </button>
               <a href={`/work?project=${s.id}`} style={{ ...label, color: '#15a34a', textDecoration: 'none' }}>Work queue →</a>
               <button onClick={() => exportProject(s.id, s.company)} style={{ ...label, background: 'none', border: 'none', cursor: 'pointer' }}>Export labels ↓</button>
+              {p.total > 0 && (
+                <select value={lsType[s.id] ?? 'eval_rating'} onChange={e => setLsType(t => ({ ...t, [s.id]: e.target.value }))} style={{ ...input, padding: '6px 8px', fontSize: 12, cursor: 'pointer' }}>
+                  {LS_TASK_TYPES.map(([v, lbl]) => <option key={v} value={v} style={{ background: '#fff' }}>{lbl}</option>)}
+                </select>
+              )}
+              {p.total > 0 && (
+                <span style={{ fontSize: 11.5, color: '#94a3b8' }}>needs: {TASK_COLUMNS[lsType[s.id] ?? 'eval_rating']}</span>
+              )}
+              <button onClick={() => lsSync(s.id)} disabled={lsSyncing === s.id || p.total === 0} style={{ ...label, background: 'none', border: 'none', cursor: p.total === 0 ? 'not-allowed' : 'pointer', color: '#2563EB' }}>
+                {lsSyncing === s.id ? 'Sending…' : 'Send to Label Studio ↗'}
+              </button>
+              <button onClick={() => lsPull(s.id)} disabled={lsSyncing === s.id} style={{ ...label, background: 'none', border: 'none', cursor: 'pointer', color: '#2563EB' }}>
+                Pull results ↓
+              </button>
               {p.total > 0 && <span style={label}>{p.done}/{p.total} labeled</span>}
+              {lsMsg[s.id] && <span style={{ ...label, color: lsMsg[s.id].startsWith('Sent') ? '#15a34a' : '#dc2626' }}>{lsMsg[s.id]}</span>}
               {clinicians.length > 0 && (
                 <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center', marginLeft: 'auto' }}>
                   <select
@@ -411,6 +510,23 @@ export default function AdminPage() {
                   )}
                 </span>
               )}
+            </div>
+
+            <div style={{ display: 'flex', gap: 9, alignItems: 'center', marginTop: 10, flexWrap: 'wrap' }}>
+              <span style={label}>Pay</span>
+              <span style={{ color: '#475569', fontSize: 13 }}>$</span>
+              <input style={{ ...input, width: 70, padding: '6px 9px', fontSize: 13 }} placeholder="0.00" value={mrate(s)} onChange={e => setMeta(m => ({ ...m, [s.id]: { rate: e.target.value, difficulty: mdiff(s) } }))} />
+              <span style={{ color: '#475569', fontSize: 13 }}>/ item</span>
+              <select style={{ ...input, padding: '6px 9px', fontSize: 13, cursor: 'pointer' }} value={mdiff(s)} onChange={e => setMeta(m => ({ ...m, [s.id]: { rate: mrate(s), difficulty: e.target.value } }))}>
+                <option value="">Difficulty…</option>
+                <option value="Easy">Easy</option>
+                <option value="Standard">Standard</option>
+                <option value="Hard">Hard</option>
+              </select>
+              <button style={{ ...label, background: 'none', border: 'none', cursor: 'pointer', color: '#2563EB' }} onClick={() => saveMeta(s)} disabled={metaSaving === s.id}>
+                {metaSaving === s.id ? 'Saving…' : 'Save pay'}
+              </button>
+              {metaMsg[s.id] && <span style={{ ...label, color: metaMsg[s.id].includes('✓') ? '#15a34a' : '#dc2626' }}>{metaMsg[s.id]}</span>}
             </div>
 
             {openId === s.id && (

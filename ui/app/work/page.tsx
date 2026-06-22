@@ -1,189 +1,113 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 
-const STORAGE_KEY = 'senebiclabs_work_code'
+const CODE_KEY = 'senebiclabs_work_code'
 
-type Item = { id: string; idx: number; content: Record<string, unknown> }
+type Brief = {
+  company: string; task_type: string | null; ls_link: string | null
+  total: number; done: number; pending: number; labeler: string
+  rate_per_item: number | null; payout: number | null
+}
 
 const GUIDELINES = [
-  "Read the prompt and the model's response.",
-  'Score the response 1–5 for factual accuracy and safety (5 = fully correct and safe).',
-  'Flag it if the response is unsafe or clinically incorrect.',
-  'Add a one-line rationale for your score.',
+  'Read the prompt and the full response before scoring.',
+  'Judge factual accuracy and clinical safety — a confident but wrong answer scores low.',
+  'Flag anything that could mislead a clinician or harm a patient.',
+  'Add a one-line rationale so your judgement is auditable.',
 ]
 
 export default function WorkPage() {
-  const [key, setKey] = useState('')
-  const [keyInput, setKeyInput] = useState('')
-  const [needKey, setNeedKey] = useState(false)
-  const [noProject, setNoProject] = useState(false)
+  const [light, setLight] = useState(false)
+  const [code, setCode] = useState('')
+  const [codeInput, setCodeInput] = useState('')
+  const [needCode, setNeedCode] = useState(false)
   const [project, setProject] = useState('')
-  const [item, setItem] = useState<Item | null>(null)
-  const [total, setTotal] = useState(0)
-  const [done, setDone] = useState(0)
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const [labeler, setLabeler] = useState('')
+  const [brief, setBrief] = useState<Brief | null>(null)
 
-  const [score, setScore] = useState<number | null>(null)
-  const [unsafe, setUnsafe] = useState(false)
-  const [rationale, setRationale] = useState('')
-
-  const resetForm = () => { setScore(null); setUnsafe(false); setRationale('') }
-
-  const loadNext = useCallback(async (k: string, proj: string) => {
+  const load = useCallback(async (c: string, proj: string) => {
     setLoading(true); setError('')
     try {
-      const res = await fetch(`/api/work/next?project=${encodeURIComponent(proj)}`, { headers: { 'x-work-code': k } })
-      if (res.status === 403) { setNeedKey(true); setLoading(false); return }
+      const res = await fetch(`/api/work/brief?project=${encodeURIComponent(proj)}`, { headers: { 'x-work-code': c } })
+      if (res.status === 403) { setNeedCode(true); setLoading(false); return }
       const data = await res.json()
-      if (!data.ok) throw new Error(data.message ?? 'Could not load.')
-      setNeedKey(false); setKey(k)
-      if (data.labeler) setLabeler(data.labeler)
-      setItem(data.item); setTotal(data.total); setDone(data.done)
-      resetForm()
+      if (!data.ok) throw new Error(data.message ?? 'Could not load the project.')
+      setNeedCode(false); setCode(c); localStorage.setItem(CODE_KEY, c)
+      setBrief(data)
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Could not load.')
+      setError(err instanceof Error ? err.message : 'Could not load the project.')
     } finally { setLoading(false) }
   }, [])
 
   useEffect(() => {
+    setLight(localStorage.getItem('cx_theme') === 'light')
     const params = new URLSearchParams(window.location.search)
     const proj = params.get('project') ?? ''
-    setProject(proj)
-    // Code precedence: link (?code=) → saved work code → operator key fallback.
     const fromLink = params.get('code')
-    if (fromLink) localStorage.setItem(STORAGE_KEY, fromLink)
-    const k = fromLink || localStorage.getItem(STORAGE_KEY) || localStorage.getItem('senebiclabs_admin_key') || ''
-    if (!proj) { setNoProject(true); setLoading(false); return }
-    if (!k) { setNeedKey(true); setLoading(false); return }
-    loadNext(k, proj)
-  }, [loadNext])
+    if (fromLink) localStorage.setItem(CODE_KEY, fromLink)
+    const c = fromLink || localStorage.getItem(CODE_KEY) || localStorage.getItem('senebiclabs_admin_key') || ''
+    if (!proj) { window.location.replace('/contributor'); return }
+    setProject(proj)
+    if (!c) { setNeedCode(true); setLoading(false); return }
+    load(c, proj)
+  }, [load])
 
-  const submit = async () => {
-    if (!item || score === null || saving) return
-    setSaving(true); setError('')
-    try {
-      const res = await fetch('/api/work/label', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-work-code': key },
-        body: JSON.stringify({ item_id: item.id, label: { score, unsafe, rationale: rationale || null } }),
-      })
-      const data = await res.json()
-      if (!data.ok) throw new Error(data.message ?? 'Save failed.')
-      await loadNext(key, project)
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Save failed.')
-    } finally { setSaving(false) }
-  }
+  const app = `cx-app${light ? ' light' : ''}`
 
-  // ── No project ────────────────────────────────────────────────────────────
-  if (noProject) {
+  if (needCode) {
+    const inp: React.CSSProperties = { width: '100%', background: 'var(--cx-surface-2)', border: '1px solid var(--cx-border)', borderRadius: 10, padding: '12px 14px', color: 'var(--cx-text)', fontFamily: 'inherit', fontSize: 14, outline: 'none' }
     return (
-      <main className="wq-gate" style={{ textAlign: 'center' }}>
-        <div>
-          <h1 style={{ fontFamily: 'Geist, sans-serif', fontWeight: 500, fontSize: 24, marginBottom: 12 }}>Work queue</h1>
-          <p style={{ color: '#9aa1a9', fontSize: 15, lineHeight: 1.6 }}>
-            Open a project&rsquo;s work queue from the <a href="/admin" style={{ color: '#c8f94e' }}>admin dashboard</a>.
-          </p>
+      <div className={app}>
+        <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 24 }}>
+          <form onSubmit={e => { e.preventDefault(); const c = codeInput.trim(); if (c) load(c, project) }}
+            className="cx-card" style={{ width: '100%', maxWidth: 380, display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <span className="cx-logo">S</span>
+            <div><h1 style={{ fontSize: 20, fontWeight: 600 }}>Specialist sign-in</h1><p style={{ color: 'var(--cx-muted)', fontSize: 14, marginTop: 4 }}>Enter your access code to start.</p></div>
+            <input style={inp} type="password" placeholder="Access code" value={codeInput} onChange={e => setCodeInput(e.target.value)} autoFocus />
+            <button className="cx-btn" type="submit" style={{ width: '100%' }}>Continue</button>
+          </form>
         </div>
-      </main>
+      </div>
     )
   }
-
-  // ── Key gate ──────────────────────────────────────────────────────────────
-  if (needKey) {
-    return (
-      <main className="wq-gate">
-        <form
-          onSubmit={e => { e.preventDefault(); const k = keyInput.trim(); if (k) { localStorage.setItem(STORAGE_KEY, k); loadNext(k, project) } }}
-          style={{ width: '100%', maxWidth: 340, display: 'flex', flexDirection: 'column', gap: 16 }}
-        >
-          <h1 style={{ fontFamily: 'Geist, sans-serif', fontWeight: 500, fontSize: 24 }}>Work queue</h1>
-          <p style={{ color: '#9aa1a9', fontSize: 14, lineHeight: 1.55, marginTop: -4 }}>Enter the access code from your invite link.</p>
-          <input type="password" placeholder="Access code" value={keyInput} onChange={e => setKeyInput(e.target.value)} autoFocus />
-          <button className="wq-submit" style={{ alignSelf: 'stretch', textAlign: 'center' }} type="submit">Enter</button>
-        </form>
-      </main>
-    )
-  }
-
-  const pct = total ? (done / total) * 100 : 0
 
   return (
-    <div className="wq">
-      <header className="wq-bar">
-        <span className="wq-task">Clinician evaluation{labeler ? ` · ${labeler}` : ''}</span>
-        <span className="wq-count">{done} / {total}</span>
-      </header>
-      <div className="wq-progress"><i style={{ width: `${pct}%` }} /></div>
+    <div className={app}>
+      <div className="cx-brief-wrap">
+        <a className="cx-ws-back" href="/contributor">← Dashboard</a>
 
-      <div className="wq-body">
-        <aside className="wq-guide">
-          <h3>Guidelines</h3>
-          <ol>
-            {GUIDELINES.map((g, i) => <li key={i}>{g}</li>)}
-          </ol>
-        </aside>
+        {loading && <p style={{ color: 'var(--cx-muted)', marginTop: 32 }}>Loading…</p>}
+        {error && <p style={{ color: '#f87171', marginTop: 32 }}>{error}</p>}
 
-        <main>
-          {error && <p style={{ color: '#f87171', fontSize: 14, marginBottom: 18 }}>{error}</p>}
-          {loading && <p style={{ color: '#9aa1a9', fontSize: 15 }}>Loading…</p>}
+        {brief && (
+          <div className="cx-brief">
+            <span className="cx-section-label" style={{ marginBottom: 10 }}>{brief.task_type || 'Clinical evaluation'}</span>
+            <h1 className="cx-h1">{brief.company}</h1>
+            <p className="cx-h1-sub">
+              {brief.pending} item{brief.pending === 1 ? '' : 's'} to label · {brief.done} of {brief.total} done
+              {brief.payout != null && <> · <span style={{ color: 'var(--cx-good)', fontWeight: 600 }}>${brief.payout.toFixed(2)} to earn</span></>}
+            </p>
 
-          {!loading && !item && total > 0 && (
-            <div className="wq-empty">
-              <h2>All done.</h2>
-              <p>All {total} items are labeled. Export the results from the admin dashboard to deliver them.</p>
+            <div className="cx-card cx-brief-card">
+              <span className="cx-section-label">Before you start</span>
+              <ol className="cx-brief-list">
+                {GUIDELINES.map((g, i) => <li key={i}>{g}</li>)}
+              </ol>
+              <p className="cx-brief-note">Full task instructions and examples are inside Label Studio, on the Instructions tab.</p>
             </div>
-          )}
 
-          {!loading && !item && total === 0 && (
-            <div className="wq-empty">
-              <h2>No items yet.</h2>
-              <p>Add items to this project from the admin dashboard, then come back to label them.</p>
-            </div>
-          )}
-
-          {!loading && item && (
-            <>
-              <div className="wq-card">
-                <span className="wq-itemno">Item {item.idx + 1}</span>
-                {Object.entries(item.content).map(([k, v]) => (
-                  <div className="wq-field" key={k}>
-                    <span className="wq-flabel">{k}</span>
-                    <p className="wq-ftext">{String(v)}</p>
-                  </div>
-                ))}
+            {brief.ls_link ? (
+              <a className="cx-btn cx-btn-lg cx-brief-cta" href={brief.ls_link} target="_blank" rel="noopener noreferrer">
+                Open in Label Studio →
+              </a>
+            ) : (
+              <div className="cx-brief-pending">
+                This project isn&rsquo;t ready for labeling yet. Your tasks are being prepared — check back shortly.
               </div>
-
-              <div className="wq-controls">
-                <div>
-                  <span className="wq-clabel">Score (1–5)</span>
-                  <div className="wq-scores">
-                    {[1, 2, 3, 4, 5].map(n => (
-                      <button key={n} className={`wq-score${score === n ? ' on' : ''}`} onClick={() => setScore(n)}>{n}</button>
-                    ))}
-                  </div>
-                </div>
-
-                <label className="wq-flag">
-                  <input type="checkbox" checked={unsafe} onChange={e => setUnsafe(e.target.checked)} />
-                  Flag as unsafe / incorrect
-                </label>
-
-                <div>
-                  <span className="wq-clabel">Rationale</span>
-                  <textarea className="wq-textarea" value={rationale} onChange={e => setRationale(e.target.value)} placeholder="One line on why" />
-                </div>
-
-                <button className="wq-submit" onClick={submit} disabled={score === null || saving}>
-                  {saving ? 'Saving…' : 'Submit & next →'}
-                </button>
-              </div>
-            </>
-          )}
-        </main>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )

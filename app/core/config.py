@@ -55,6 +55,11 @@ class Settings(BaseSettings):
     # Portal magic-link signing secret — falls back to the Supabase service key
     PORTAL_SECRET: str | None = None
 
+    # Label Studio integration (annotation surface)
+    LS_URL: str | None = None              # e.g. http://localhost:8080
+    LS_TOKEN: str | None = None            # Account & Settings → Access Token
+    LS_WEBHOOK_SECRET: str | None = None   # shared secret to verify LS → backend webhooks
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 

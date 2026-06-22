@@ -92,6 +92,16 @@ class LabelIn(BaseModel):
     label: dict                # e.g. {"score": 4, "unsafe": false, "rationale": "..."}
 
 
+class SkipIn(BaseModel):
+    item_id: str
+
+
+class ProjectMetaIn(BaseModel):
+    project_id: str
+    rate_per_item: float | None = None
+    difficulty: str | None = None
+
+
 class ClinicianIn(BaseModel):
     name: str
     email: EmailStr | None = None
@@ -196,6 +206,19 @@ def portal_projects(token: str):
         logger.error("Portal projects fetch failed: %s", exc)
         raise HTTPException(status_code=500, detail="Could not load your projects. Please try again.")
 
+    subs = rows.data or []
+    counts: dict[str, dict[str, int]] = {}
+    if subs:
+        try:
+            its = db.table("project_items").select("project_id,status").in_("project_id", [s["id"] for s in subs]).execute()
+            for it in (its.data or []):
+                c = counts.setdefault(it["project_id"], {"total": 0, "done": 0})
+                c["total"] += 1
+                if it.get("status") == "done":
+                    c["done"] += 1
+        except Exception as exc:
+            logger.error("Portal item counts failed: %s", exc)
+
     projects = [
         {
             "id": r["id"],
@@ -205,10 +228,86 @@ def portal_projects(token: str):
             "stage": r.get("stage") or "submitted",
             "stage_note": r.get("stage_note"),
             "created_at": r.get("created_at"),
+            "total": counts.get(r["id"], {}).get("total", 0),
+            "done": counts.get(r["id"], {}).get("done", 0),
         }
-        for r in (rows.data or [])
+        for r in subs
     ]
     return {"ok": True, "email": email, "projects": projects}
+
+
+class PortalItemsIn(BaseModel):
+    token: str
+    project_id: str
+    items: list[dict]
+
+
+@router.post("/portal/items", response_model=SubmissionResponse, summary="Customer uploads data for their own project")
+def portal_add_items(body: PortalItemsIn):
+    email = verify_token(body.token)
+    if not email:
+        raise HTTPException(status_code=401, detail="This session has expired. Request a new sign-in link.")
+    db = get_client()
+    if db is None:
+        raise HTTPException(status_code=503, detail="The portal is temporarily unavailable. Please try again shortly.")
+    if not body.items:
+        return SubmissionResponse(ok=True, message="No items to upload.")
+
+    # The customer may only upload to a project that belongs to their email.
+    try:
+        sub = db.table("project_submissions").select("id,email").eq("id", body.project_id).limit(1).execute()
+    except Exception as exc:
+        logger.error("Portal upload ownership check failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Could not upload. Please try again.")
+    if not sub.data or sub.data[0].get("email") != email:
+        raise HTTPException(status_code=403, detail="That project is not on this account.")
+
+    try:
+        existing = (
+            db.table("project_items").select("idx").eq("project_id", body.project_id)
+            .order("idx", desc=True).limit(1).execute()
+        )
+        start = (existing.data[0]["idx"] + 1) if existing.data else 0
+        rows_in = [{"project_id": body.project_id, "idx": start + i, "content": c} for i, c in enumerate(body.items)]
+        db.table("project_items").insert(rows_in).execute()
+    except Exception as exc:
+        logger.error("Portal upload insert failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Could not upload your data. Please try again.")
+
+    logger.info("Customer %s uploaded %d items to %s", email, len(body.items), body.project_id)
+    return SubmissionResponse(ok=True, message=f"Uploaded {len(body.items)} items.")
+
+
+@router.get("/portal/results", summary="Customer downloads their delivered results (magic-link token)")
+def portal_results(token: str, project_id: str):
+    email = verify_token(token)
+    if not email:
+        raise HTTPException(status_code=401, detail="This session has expired. Request a new sign-in link.")
+    db = get_client()
+    if db is None:
+        raise HTTPException(status_code=503, detail="The portal is temporarily unavailable. Please try again shortly.")
+
+    # Ownership check — a customer may only download results for their own project.
+    try:
+        sub = db.table("project_submissions").select("id,email,company,stage").eq("id", project_id).limit(1).execute()
+    except Exception as exc:
+        logger.error("Portal results lookup failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Could not load results. Please try again.")
+    if not sub.data or sub.data[0].get("email") != email:
+        raise HTTPException(status_code=403, detail="That project is not on this account.")
+    s = sub.data[0]
+    if s.get("stage") != "delivered":
+        raise HTTPException(status_code=409, detail="Results are not ready yet. You can download them once the project is delivered.")
+
+    try:
+        rows = (
+            db.table("project_items").select("idx,content,label,labeled_at")
+            .eq("project_id", project_id).order("idx").execute()
+        )
+    except Exception as exc:
+        logger.error("Portal results fetch failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Could not load results. Please try again.")
+    return {"ok": True, "company": s.get("company"), "items": rows.data or []}
 
 
 # ── Admin ──────────────────────────────────────────────────────────────────────
@@ -224,16 +323,22 @@ def admin_submissions(x_admin_key: str | None = Header(default=None)):
     db = get_client()
     if db is None:
         raise HTTPException(status_code=503, detail="Database unavailable.")
+    base = "id,name,email,company,description,task_type,volume,timeline,stage,stage_note,status,created_at,updated_at"
     try:
         rows = (
             db.table("project_submissions")
-            .select("id,name,email,company,description,task_type,volume,timeline,stage,stage_note,status,created_at,updated_at")
+            .select(base + ",rate_per_item,difficulty")
             .order("created_at", desc=True)
             .execute()
         )
-    except Exception as exc:
-        logger.error("Admin list failed: %s", exc)
-        raise HTTPException(status_code=500, detail="Could not load submissions.")
+    except Exception:
+        # rate_per_item / difficulty migration not applied yet — degrade, don't 500.
+        logger.warning("rate_per_item/difficulty columns missing; run the migration to enable pay/difficulty.")
+        try:
+            rows = db.table("project_submissions").select(base).order("created_at", desc=True).execute()
+        except Exception as exc:
+            logger.error("Admin list failed: %s", exc)
+            raise HTTPException(status_code=500, detail="Could not load submissions.")
 
     subs = rows.data or []
     # Attach real item progress (total / done) to each submission in one query.
@@ -289,6 +394,27 @@ def admin_advance(body: AdminAdvance, x_admin_key: str | None = Header(default=N
 
     logger.info("Project %s advanced to %s", body.submission_id, body.stage)
     return SubmissionResponse(ok=True, message=f"Project advanced to {body.stage}.")
+
+
+@router.post("/admin/project-meta", response_model=SubmissionResponse, summary="Set a project's pay rate + difficulty (admin)")
+def admin_set_meta(body: ProjectMetaIn, x_admin_key: str | None = Header(default=None)):
+    _require_admin(x_admin_key)
+    db = get_client()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable.")
+    try:
+        db.table("project_submissions").update(
+            {"rate_per_item": body.rate_per_item, "difficulty": body.difficulty}
+        ).eq("id", body.project_id).execute()
+    except Exception as exc:
+        logger.error("Set project meta failed: %s", exc)
+        if "rate_per_item" in str(exc) or "difficulty" in str(exc) or "42703" in str(exc):
+            raise HTTPException(
+                status_code=400,
+                detail="Pay/difficulty columns are missing. Run the migration (add rate_per_item + difficulty to project_submissions) and try again.",
+            )
+        raise HTTPException(status_code=500, detail="Could not save.")
+    return SubmissionResponse(ok=True, message="Saved.")
 
 
 # ── Work: items + labeling ──────────────────────────────────────────────────────
@@ -433,6 +559,204 @@ def work_label(body: LabelIn, x_work_code: str | None = Header(default=None)):
         logger.error("Save label failed: %s", exc)
         raise HTTPException(status_code=500, detail="Could not save the label.")
     return SubmissionResponse(ok=True, message="Saved.")
+
+
+@router.post("/work/skip", response_model=SubmissionResponse, summary="Skip the current item (release to back of queue)")
+def work_skip(body: SkipIn, x_work_code: str | None = Header(default=None)):
+    db = get_client()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable.")
+    labeler = _resolve_labeler(db, x_work_code)
+    if not labeler:
+        raise HTTPException(status_code=403, detail="Invalid or inactive access code.")
+
+    try:
+        row = db.table("project_items").select("project_id,status,assigned_to").eq("id", body.item_id).limit(1).execute()
+    except Exception as exc:
+        logger.error("Skip lookup failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Could not skip.")
+    if not row.data:
+        raise HTTPException(status_code=404, detail="Item not found.")
+    it = row.data[0]
+    if it["status"] == "done":
+        return SubmissionResponse(ok=True, message="Already done.")
+    if labeler["id"] != "admin" and it.get("assigned_to") != labeler["id"]:
+        raise HTTPException(status_code=409, detail="This item is not yours.")
+
+    try:
+        mx = (
+            db.table("project_items").select("idx").eq("project_id", it["project_id"])
+            .order("idx", desc=True).limit(1).execute()
+        )
+        new_idx = (mx.data[0]["idx"] + 1) if mx.data else 0
+        db.table("project_items").update(
+            {"status": "pending", "assigned_to": None, "claimed_at": None, "idx": new_idx}
+        ).eq("id", body.item_id).execute()
+    except Exception as exc:
+        logger.error("Skip failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Could not skip.")
+    return SubmissionResponse(ok=True, message="Skipped.")
+
+
+@router.get("/work/home", summary="Contributor home: available projects + personal stats")
+def work_home(x_work_code: str | None = Header(default=None)):
+    db = get_client()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable.")
+    labeler = _resolve_labeler(db, x_work_code)
+    if not labeler:
+        raise HTTPException(status_code=403, detail="Invalid or inactive access code.")
+
+    name = labeler["name"]
+    try:
+        items = db.table("project_items").select("project_id,status,labeled_by,labeled_at").execute()
+    except Exception as exc:
+        logger.error("Work home aggregation failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Could not load your work.")
+
+    now = datetime.now(timezone.utc)
+    week_ago = now - timedelta(days=7)
+    days = [now.date() - timedelta(days=i) for i in range(6, -1, -1)]   # oldest → today
+    daily_map = {d.isoformat(): 0 for d in days}
+
+    by_proj: dict[str, dict[str, int]] = {}
+    mine = 0
+    this_week = 0
+    my_projects: set[str] = set()
+    my_dates: set = set()
+    my_by_proj: dict[str, dict[str, int]] = {}   # per-project counts of MY labels (total / this week)
+    recent: list[tuple[str, str]] = []   # (labeled_at, project_id)
+
+    for it in (items.data or []):
+        pid = it["project_id"]
+        p = by_proj.setdefault(pid, {"total": 0, "done": 0})
+        p["total"] += 1
+        if it.get("status") == "done":
+            p["done"] += 1
+        if it.get("labeled_by") == name:
+            mine += 1
+            my_projects.add(pid)
+            mp = my_by_proj.setdefault(pid, {"total": 0, "week": 0})
+            mp["total"] += 1
+            at = it.get("labeled_at")
+            if at:
+                recent.append((at, pid))
+                try:
+                    dt = datetime.fromisoformat(at.replace("Z", "+00:00"))
+                    if dt >= week_ago:
+                        this_week += 1
+                        mp["week"] += 1
+                    my_dates.add(dt.date())
+                    dk = dt.date().isoformat()
+                    if dk in daily_map:
+                        daily_map[dk] += 1
+                except Exception:
+                    pass
+
+    meta: dict[str, dict] = {}
+    if by_proj:
+        ids = list(by_proj.keys())
+        try:
+            subs = db.table("project_submissions").select("id,company,rate_per_item,difficulty").in_("id", ids).execute()
+            meta = {s["id"]: s for s in (subs.data or [])}
+        except Exception:
+            # pay/difficulty columns not migrated yet — fall back to names only.
+            try:
+                subs = db.table("project_submissions").select("id,company").in_("id", ids).execute()
+                meta = {s["id"]: s for s in (subs.data or [])}
+            except Exception as exc:
+                logger.error("Work home meta lookup failed: %s", exc)
+
+    def _name(pid: str) -> str:
+        return (meta.get(pid) or {}).get("company") or "Project"
+
+    # current streak: consecutive days with activity ending today (or yesterday)
+    streak = 0
+    cur = now.date() if now.date() in my_dates else (now.date() - timedelta(days=1))
+    while cur in my_dates:
+        streak += 1
+        cur -= timedelta(days=1)
+
+    # earnings = sum(rate × my labeled items) per project, only where a rate is set
+    earned_total = 0.0
+    earned_week = 0.0
+    for pid, mc in my_by_proj.items():
+        rate = (meta.get(pid) or {}).get("rate_per_item")
+        if rate:
+            earned_total += rate * mc["total"]
+            earned_week += rate * mc["week"]
+
+    EST_MIN_PER_ITEM = 1
+    projects = []
+    for pid, c in by_proj.items():
+        m = meta.get(pid) or {}
+        pending = c["total"] - c["done"]
+        rate = m.get("rate_per_item")
+        projects.append({
+            "id": pid,
+            "company": m.get("company") or "Project",
+            "total": c["total"],
+            "done": c["done"],
+            "pending": pending,
+            "difficulty": m.get("difficulty"),
+            "payout": round(rate * pending, 2) if rate else None,
+            "est_minutes": pending * EST_MIN_PER_ITEM,
+        })
+    projects.sort(key=lambda x: (-x["pending"], x["company"]))
+
+    recent.sort(reverse=True)
+    recent_out = [{"company": _name(pid), "at": at} for at, pid in recent[:6]]
+    daily = [daily_map[d.isoformat()] for d in days]
+
+    return {
+        "ok": True,
+        "name": name,
+        "total_labeled": mine,
+        "this_week": this_week,
+        "streak": streak,
+        "earned_total": round(earned_total, 2),
+        "earned_week": round(earned_week, 2),
+        "active_projects": len(my_projects),
+        "daily": daily,
+        "recent": recent_out,
+        "projects": projects,
+    }
+
+
+@router.get("/work/brief", summary="Project brief + Label Studio link for a clinician")
+def work_brief(project_id: str, x_work_code: str | None = Header(default=None)):
+    db = get_client()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable.")
+    labeler = _resolve_labeler(db, x_work_code)
+    if not labeler:
+        raise HTTPException(status_code=403, detail="Invalid or inactive access code.")
+
+    try:
+        sub = db.table("project_submissions").select("id,company,task_type,ls_project_id,rate_per_item").eq("id", project_id).limit(1).execute()
+    except Exception:
+        # rate_per_item not migrated yet — fetch without it.
+        sub = db.table("project_submissions").select("id,company,task_type,ls_project_id").eq("id", project_id).limit(1).execute()
+    if not sub.data:
+        raise HTTPException(status_code=404, detail="Project not found.")
+    s = sub.data[0]
+    total, done = _progress(db, project_id)
+    pending = total - done
+    ls_pid = s.get("ls_project_id")
+    ls_link = f"{settings.LS_URL.rstrip('/')}/projects/{ls_pid}/data" if (ls_pid and settings.LS_URL) else None
+    rate = s.get("rate_per_item")
+    return {
+        "ok": True,
+        "company": s.get("company") or "Project",
+        "task_type": s.get("task_type"),
+        "ls_link": ls_link,
+        "total": total,
+        "done": done,
+        "pending": pending,
+        "rate_per_item": rate,
+        "payout": round(rate * pending, 2) if rate else None,
+        "labeler": labeler["name"],
+    }
 
 
 @router.post("/admin/clinicians", summary="Create a clinician + access code (admin)")
