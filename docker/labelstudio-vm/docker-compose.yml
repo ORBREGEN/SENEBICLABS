@@ -23,6 +23,7 @@ services:
       POSTGRE_HOST: ls-db
       POSTGRE_PORT: 5432
       LABEL_STUDIO_HOST: https://${LS_DOMAIN}          # public URL clinicians use
+      CSRF_TRUSTED_ORIGINS: https://${LS_DOMAIN}        # trust the domain behind the HTTPS proxy
       LABEL_STUDIO_USERNAME: ${LS_ADMIN_EMAIL}          # bootstrap admin (first boot only)
       LABEL_STUDIO_PASSWORD: ${LS_ADMIN_PASSWORD}
       LABEL_STUDIO_DISABLE_SIGNUP_WITHOUT_LINK: "true"  # invite-only — no open signups
