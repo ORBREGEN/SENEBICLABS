@@ -1,7 +1,7 @@
 'use client'
 import { useState } from 'react'
 import NavBar from '../components/NavBar'
-import FooterSection from '../components/sections/FooterSection'
+import EvalFooter from '../components/EvalFooter'
 import Toast from '../components/ui/Toast'
 
 const TASK_TYPES = [
@@ -85,7 +85,7 @@ export default function SubmitPage() {
   return (
     <>
       <div className="submit-light">
-      <NavBar onLight />
+      <NavBar minimal onLight />
 
       <section className="submit-section">
         <div className="wrap">
@@ -194,7 +194,7 @@ export default function SubmitPage() {
         </div>
       </section>
 
-      <FooterSection />
+      <EvalFooter />
       </div>
     </>
   )
