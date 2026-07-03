@@ -66,23 +66,31 @@ def main():
     pid = sub.data[0]["id"]
     print("project id:", pid, "| client prefix:", client_id)
 
-    rows, missing = [], []
-    for i, r in enumerate(manifest):
-        path = os.path.join(args.images, r["image"])
-        if not os.path.exists(path):
-            missing.append(r["image"])
-            continue
+    # Stable index = manifest position. A missing image becomes a visible gap, never a shift.
+    present, gaps = ingest.plan_items(manifest, lambda name: os.path.exists(os.path.join(args.images, name)))
+
+    rows = []
+    for rec in present:
+        path = os.path.join(args.images, rec["image"])
         key = storage.upload_image(client_id, path, db)          # private, de-identified key
         url = storage.signed_url(key, ttl, db)                    # time-limited access
-        content = {"image": url, "prediction": r["prediction"], **r["extra"]}
-        rows.append({"project_id": pid, "idx": i, "content": content})
-        print(f"  [{i + 1}/{len(manifest)}] uploaded (de-identified)")
+        content = {"image": url, "prediction": rec["prediction"], **rec["extra"]}
+        rows.append({"project_id": pid, "idx": rec["idx"], "content": content})
+        print(f"  idx {rec['idx']}: uploaded (de-identified)")
 
     if rows:
         db.table("project_items").insert(rows).execute()
-    print(f"\ncreated {len(rows)} tasks in project {pid}")
-    if missing:
-        raise SystemExit(f"ERROR: {len(missing)} images in the manifest were not found: {missing[:5]}")
+    print(f"\ncreated {len(rows)} tasks in project {pid} (indices tied to manifest rows)")
+
+    if gaps:
+        print("\nGAPS — these manifest rows had no image file. Their indices are left EMPTY so"
+              "\nevery other verdict still lines up with the right row. Order is preserved:")
+        for g in gaps:
+            print(f"  idx {g['idx']}: {g['image']} NOT FOUND")
+        raise SystemExit(
+            f"{len(gaps)} image(s) missing — created the project with visible gaps at the indices "
+            "above. Resolve and re-run before delivery; do NOT deliver with gaps unexplained."
+        )
     print("Next: assign a radiologist (project_clinicians), then /admin -> 'xray_classification' -> Send to Label Studio.")
 
 

@@ -78,3 +78,30 @@ def load_manifest(path: str, mapping: dict) -> list[dict]:
     if not rows:
         raise ValueError("manifest has no data rows")
     return rows
+
+
+def plan_items(manifest: list[dict], exists) -> tuple[list[dict], list[dict]]:
+    """Assign each manifest row a STABLE index = its position in the manifest.
+
+    This is the row-order integrity guarantee for a radiology eval: the index of an item is
+    its position in the client's manifest, NEVER a running counter over the images that
+    happened to be present. So a missing/unreadable image leaves a *visible gap* at its
+    index and every item after it keeps its original index — a skip can never silently shift
+    verdicts onto the wrong X-ray. Every delivery path orders by this index.
+
+    `exists(image_name) -> bool` decides whether an image is available. Returns
+    (present, gaps); each record carries its stable `idx`. Until per-client case-id
+    passthrough lands (#4, MUST-FIX before real delivery), this index is the mapping.
+    """
+    present, gaps = [], []
+    for i, r in enumerate(manifest):
+        rec = {"idx": i, "image": r["image"], "prediction": r["prediction"], "extra": r["extra"]}
+        (present if exists(r["image"]) else gaps).append(rec)
+
+    # Cheap invariant: indices are exactly the manifest positions, unique, no reordering.
+    all_idx = [rec["idx"] for rec in present] + [rec["idx"] for rec in gaps]
+    if sorted(all_idx) != list(range(len(manifest))):
+        raise AssertionError("row-order integrity broken: indices are not the manifest positions")
+    if [rec["idx"] for rec in present] != sorted(rec["idx"] for rec in present):
+        raise AssertionError("row-order integrity broken: present items are out of manifest order")
+    return present, gaps

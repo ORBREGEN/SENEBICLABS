@@ -186,3 +186,41 @@ Both must pass. If either is hard to make pass, stop — do not weaken the test.
   so a hiccup never blocks a labeling save (see `app/services/audit.py`). When the audit
   trail becomes a client deliverable, add monitoring/alerting on the logged audit-write
   failures so a silent audit outage surfaces before a client notices a gap.
+- **Result-to-image mapping is by row index — case-id passthrough is MUST-FIX before real
+  delivery (not optional).** Today an item's identity is its `idx` = its row position in the
+  client's manifest. `ingest.plan_items` guarantees that index is stable and that a missing
+  image leaves a *visible gap*, never a shift (covered by `tests/test_ingest_order.py`), and
+  every export orders by `idx` — so order integrity holds. BUT a bare row index is a fragile
+  identity for a radiology eval: it relies on the client keeping their manifest row order.
+  Before delivering to any real client, wire their own case/study ID through
+  `extra_columns` → item content → export (part of #4), so each verdict is bound to *his*
+  identifier, not our row number. Do not deliver a real batch on row-index mapping alone.
+
+---
+
+## Future: the automated version (sketch — DO NOT build yet)
+
+Captured while the manual friction is fresh. **Build only after the first pilot (Abhishek's
+batch, run by hand) confirms these are the real chafe points** — not before. Today's flow is
+deliberately white-glove: the client hands over files and the operator ingests. The clean
+version removes the operator from the middle, in this priority order:
+
+1. **Results keyed by the client's own IDs (highest value, smallest build).** This is the
+   case-id passthrough above, productized: every delivered verdict carries the client's study
+   ID, so results drop straight into his system with no row-order dependency. Foundation for
+   everything below. Do this first regardless of the rest.
+2. **Self-serve image upload.** A portal upload that accepts image *files* (today `/portal/items`
+   takes JSON rows only) → straight into the private per-client bucket with the same
+   de-identification and stable indexing the script does now. Removes the out-of-band transfer
+   link and the operator running `ingest_xray.py`. Shape: presigned per-client upload URLs +
+   a manifest CSV upload, validated by `ingest.load_manifest` before any task is created.
+3. **Read from the client's own bucket.** Instead of him uploading, he grants read access to
+   his S3/GCS and we pull — the Scale-style intake. Matters once there is more than one client
+   and transfers get painful.
+4. **Results via API / webhook.** Push delivered results back to the client's system as they
+   complete, instead of a portal download. Matters when a client wants results flowing
+   continuously into their own pipeline.
+
+Guiding principle: match the **rigor** of the big platforms (de-id, isolation, audit, ID-keyed
+results — largely built) before their **plumbing** (buckets, APIs, self-serve consoles). The
+plumbing is bought back later with revenue; the rigor is the product.
