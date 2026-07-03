@@ -14,6 +14,7 @@ from pydantic import BaseModel, EmailStr
 from app.core.config import settings
 from app.services.supabase_client import get_client
 from app.services import email_service
+from app.services import audit
 from app.services.portal_tokens import make_token, verify_token
 
 logger = logging.getLogger(__name__)
@@ -49,6 +50,25 @@ def _resolve_labeler(db, code: str | None) -> dict | None:
         c = rows.data[0]
         return {"id": c["id"], "name": c["name"]}
     return None
+
+
+def _labeler_can_access(db, labeler: dict, project_id: str) -> bool:
+    """Slice #2 isolation: a clinician may only touch projects they're assigned to
+    (via project_clinicians). The operator (admin) sees everything. Fails CLOSED —
+    if the assignment can't be verified, access is denied. Project creation alone no
+    longer grants access; a clinician must be assigned. See README onboarding.
+    """
+    if labeler.get("id") == "admin":
+        return True
+    try:
+        r = (
+            db.table("project_clinicians").select("project_id")
+            .eq("project_id", project_id).eq("clinician_id", labeler["id"]).limit(1).execute()
+        )
+        return bool(r.data)
+    except Exception as exc:
+        logger.error("Access check failed (denying): %s", exc)
+        return False
 
 
 # ── Schemas ────────────────────────────────────────────────────────────────────
@@ -317,6 +337,20 @@ def _require_admin(x_admin_key: str | None) -> None:
         raise HTTPException(status_code=403, detail="Not authorised.")
 
 
+@router.get("/admin/audit/{project_id}", summary="Audit trail for a project (admin)")
+def admin_audit(project_id: str, x_admin_key: str | None = Header(default=None)):
+    _require_admin(x_admin_key)
+    db = get_client()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable.")
+    try:
+        events = audit.history(db, project_id)
+    except Exception as exc:
+        logger.error("Audit read failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Could not load the audit trail (is the audit_events migration applied?).")
+    return {"ok": True, "project_id": project_id, "count": len(events), "events": events}
+
+
 @router.get("/admin/submissions", summary="List all project submissions (admin)")
 def admin_submissions(x_admin_key: str | None = Header(default=None)):
     _require_admin(x_admin_key)
@@ -501,6 +535,8 @@ def work_next(project_id: str, x_work_code: str | None = Header(default=None)):
     labeler = _resolve_labeler(db, x_work_code)
     if not labeler:
         raise HTTPException(status_code=403, detail="Invalid or inactive access code.")
+    if not _labeler_can_access(db, labeler, project_id):
+        raise HTTPException(status_code=403, detail="You are not assigned to this project.")
 
     item = None
     try:
@@ -535,15 +571,18 @@ def work_label(body: LabelIn, x_work_code: str | None = Header(default=None)):
         raise HTTPException(status_code=403, detail="Invalid or inactive access code.")
 
     try:
-        row = db.table("project_items").select("assigned_to,status").eq("id", body.item_id).limit(1).execute()
+        row = db.table("project_items").select("assigned_to,status,project_id").eq("id", body.item_id).limit(1).execute()
     except Exception as exc:
         logger.error("Label lookup failed: %s", exc)
         raise HTTPException(status_code=500, detail="Could not save the label.")
     if not row.data:
         raise HTTPException(status_code=404, detail="Item not found.")
+    item = row.data[0]
+    if not _labeler_can_access(db, labeler, item.get("project_id")):
+        raise HTTPException(status_code=403, detail="You are not assigned to this project.")
 
     # A clinician may only label the item they hold. The operator can label anything.
-    if labeler["id"] != "admin" and row.data[0].get("assigned_to") != labeler["id"]:
+    if labeler["id"] != "admin" and item.get("assigned_to") != labeler["id"]:
         raise HTTPException(status_code=409, detail="This item is assigned to someone else. Skipping to the next.")
 
     try:
@@ -558,6 +597,11 @@ def work_label(body: LabelIn, x_work_code: str | None = Header(default=None)):
     except Exception as exc:
         logger.error("Save label failed: %s", exc)
         raise HTTPException(status_code=500, detail="Could not save the label.")
+
+    # Audit: a save onto an already-done item is a review/correction, not a first label.
+    action = audit.REVIEW if item.get("status") == "done" else audit.LABEL
+    audit.record(db, item_id=body.item_id, project_id=item.get("project_id"), action=action,
+                 actor_id=labeler["id"], actor_name=labeler["name"], source="app", value=body.label)
     return SubmissionResponse(ok=True, message="Saved.")
 
 
@@ -578,6 +622,8 @@ def work_skip(body: SkipIn, x_work_code: str | None = Header(default=None)):
     if not row.data:
         raise HTTPException(status_code=404, detail="Item not found.")
     it = row.data[0]
+    if not _labeler_can_access(db, labeler, it.get("project_id")):
+        raise HTTPException(status_code=403, detail="You are not assigned to this project.")
     if it["status"] == "done":
         return SubmissionResponse(ok=True, message="Already done.")
     if labeler["id"] != "admin" and it.get("assigned_to") != labeler["id"]:
@@ -595,6 +641,9 @@ def work_skip(body: SkipIn, x_work_code: str | None = Header(default=None)):
     except Exception as exc:
         logger.error("Skip failed: %s", exc)
         raise HTTPException(status_code=500, detail="Could not skip.")
+
+    audit.record(db, item_id=body.item_id, project_id=it.get("project_id"), action=audit.SKIP,
+                 actor_id=labeler["id"], actor_name=labeler["name"], source="app", value=None)
     return SubmissionResponse(ok=True, message="Skipped.")
 
 
@@ -608,6 +657,17 @@ def work_home(x_work_code: str | None = Header(default=None)):
         raise HTTPException(status_code=403, detail="Invalid or inactive access code.")
 
     name = labeler["name"]
+
+    # Isolation: a clinician only sees projects they're assigned to; the operator sees all.
+    allowed = None
+    if labeler["id"] != "admin":
+        try:
+            a = db.table("project_clinicians").select("project_id").eq("clinician_id", labeler["id"]).execute()
+            allowed = {r["project_id"] for r in (a.data or [])}
+        except Exception as exc:
+            logger.error("Assigned-projects lookup failed (scoping to none): %s", exc)
+            allowed = set()
+
     try:
         items = db.table("project_items").select("project_id,status,labeled_by,labeled_at").execute()
     except Exception as exc:
@@ -629,6 +689,8 @@ def work_home(x_work_code: str | None = Header(default=None)):
 
     for it in (items.data or []):
         pid = it["project_id"]
+        if allowed is not None and pid not in allowed:
+            continue
         p = by_proj.setdefault(pid, {"total": 0, "done": 0})
         p["total"] += 1
         if it.get("status") == "done":
@@ -731,6 +793,8 @@ def work_brief(project_id: str, x_work_code: str | None = Header(default=None)):
     labeler = _resolve_labeler(db, x_work_code)
     if not labeler:
         raise HTTPException(status_code=403, detail="Invalid or inactive access code.")
+    if not _labeler_can_access(db, labeler, project_id):
+        raise HTTPException(status_code=403, detail="You are not assigned to this project.")
 
     try:
         sub = db.table("project_submissions").select("id,company,task_type,ls_project_id,rate_per_item").eq("id", project_id).limit(1).execute()

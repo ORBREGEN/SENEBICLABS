@@ -7,7 +7,10 @@ project_items. Each task carries `_item_id` so the webhook can map an annotation
 back to the right row.
 """
 
+import html
 import logging
+import re
+
 import httpx
 
 from app.core.config import settings
@@ -379,6 +382,53 @@ CONFIGS: dict[str, str] = {
     <TextArea name="rationale" toName="output" placeholder="Explain your judgement" rows="3" required="true"/>
   </View>
 </View>""",
+
+    # Radiologist review of an X-ray classification — needs columns: image (URL), prediction
+    # The operator edits the "correct finding" choices per project to match the customer's label set.
+    "xray_classification": f"""<View style="{_WRAP}">
+  <View style="{_HEAD}">
+    <Header value="X-ray classification review" style="{_TITLE}"/>
+    <Header value="Confirm whether the model's classification of this X-ray is correct." style="{_SUB}"/>
+  </View>
+
+  <View style="{_CARD_HI}">
+    <Image name="xray" value="$image" zoom="true" zoomControl="true" rotateControl="true" width="100%"/>
+  </View>
+
+  <View style="{_CARD}">
+    <Header value="Model prediction" style="{_CAPS}"/>
+    <Text name="prediction" value="$prediction" style="{_BODY}"/>
+  </View>
+
+  <View style="margin-bottom: 20px;">
+    <Header value="Is the prediction correct?" style="{_SECT}"/>
+    <Choices name="verdict" toName="xray" choice="single" showInline="true" required="true">
+      <Choice value="Correct"/>
+      <Choice value="Incorrect"/>
+      <Choice value="Partially correct"/>
+    </Choices>
+  </View>
+
+  <View style="margin-bottom: 20px;">
+    <Header value="Correct finding (if the model is wrong)" style="{_SECT}"/>
+    <Choices name="correct_label" toName="xray" choice="single" showInline="true">
+      <Choice value="Normal"/>
+      <Choice value="Abnormal"/>
+    </Choices>
+  </View>
+
+  <View style="margin-bottom: 20px;">
+    <Header value="Safety" style="{_SECT}"/>
+    <Choices name="safety" toName="xray" choice="single" showInline="true">
+      <Choice value="Critical miss"/>
+    </Choices>
+  </View>
+
+  <View>
+    <Header value="Notes" style="{_SECT}"/>
+    <TextArea name="rationale" toName="xray" placeholder="Optional reasoning" rows="3"/>
+  </View>
+</View>""",
 }
 
 # columns each task type expects (for operator guidance)
@@ -393,6 +443,7 @@ TASK_TYPE_COLUMNS = {
     "clinical_extraction": ["text"],
     "classification": ["text"],
     "safety_review": ["prompt", "output"],
+    "xray_classification": ["image", "prediction"],
 }
 
 DEFAULT_LABEL_CONFIG = CONFIGS["eval_rating"]
@@ -400,6 +451,132 @@ DEFAULT_LABEL_CONFIG = CONFIGS["eval_rating"]
 
 def get_config(task_type: str | None) -> str:
     return CONFIGS.get(task_type or "eval_rating", DEFAULT_LABEL_CONFIG)
+
+
+# ── Per-project label config generation (Slice #1) ───────────────────────────────
+# A project's `eval_config` (jsonb) drives the labeling UI, so a new client is
+# onboarded by config, not code. Shape:
+#   { "title": str?, "subtitle": str?, "renderer": "ls_image",
+#     "schema": { "classes": [...], "multi_label": bool,
+#                 "fields": { <name>: { "type": ..., ...opts } } } }
+# Field types: single | from_classes | structured | scale | flag | text.
+# `visible_when` supports "<field>!=<value>" / "<field>==<value>".
+# NOTE: the image renderer here is Label Studio's <Image> (renderer "ls_image").
+# Slice #6 abstracts this behind a seam so a DICOM/Cornerstone renderer can drop in.
+
+_ALLOWED_FIELD_TYPES = {"single", "from_classes", "structured", "scale", "flag", "text"}
+
+
+def _esc(v) -> str:
+    return html.escape(str(v), quote=True)
+
+
+def _visible_when_attrs(expr, fields: dict) -> str:
+    """Translate 'verdict!=Correct' into Label Studio conditional-view attributes.
+
+    For '!=', we expand to all of the referenced field's options except the value,
+    since LS shows a View when the controlling choice is among whenChoiceValue.
+    Returns '' when there is nothing to condition on.
+    NOTE: whether LS honours multi-value whenChoiceValue is verified against the
+    running instance in Slice #3 (conditional-field verification); here we only emit it.
+    """
+    if not expr:
+        return ""
+    m = re.match(r"\s*(\w+)\s*(==|!=)\s*(.+?)\s*$", expr)
+    if not m:
+        raise ValueError(f"Unparseable visible_when: {expr!r}")
+    tag, op, val = m.group(1), m.group(2), m.group(3)
+    opts = (fields.get(tag, {}) or {}).get("options", [])
+    if op == "!=":
+        vals = [o for o in opts if o != val] or [val]
+    else:
+        vals = [val]
+    return (
+        f' visibleWhen="choice-selected" whenTagName="{_esc(tag)}"'
+        f' whenChoiceValue="{_esc(",".join(vals))}"'
+    )
+
+
+def _control_xml(name: str, fdef: dict, classes: list) -> str:
+    ftype = fdef.get("type")
+    if ftype not in _ALLOWED_FIELD_TYPES:
+        raise ValueError(f"Unknown field type {ftype!r} for field {name!r}")
+    req = ' required="true"' if fdef.get("required") else ""
+
+    if ftype == "single":
+        opts = fdef.get("options") or []
+        if not opts:
+            raise ValueError(f"Field {name!r} of type 'single' needs 'options'")
+        choices = "".join(f'<Choice value="{_esc(o)}"/>' for o in opts)
+        return f'<Choices name="{_esc(name)}" toName="image" choice="single" showInline="true"{req}>{choices}</Choices>'
+
+    if ftype == "from_classes":
+        if not classes:
+            raise ValueError(f"Field {name!r} of type 'from_classes' needs schema.classes")
+        mode = "multiple" if fdef.get("multi") else "single"
+        choices = "".join(f'<Choice value="{_esc(c)}"/>' for c in classes)
+        return f'<Choices name="{_esc(name)}" toName="image" choice="{mode}" showInline="true"{req}>{choices}</Choices>'
+
+    if ftype == "structured":  # e.g. critical_miss: yes/no + which finding (from classes)
+        finding = "".join(f'<Choice value="{_esc(c)}"/>' for c in classes)
+        return (
+            f'<Choices name="{_esc(name)}" toName="image" choice="single" showInline="true"{req}>'
+            f'<Choice value="Yes"/><Choice value="No"/></Choices>'
+            f'<Header value="Which finding was missed" style="{_HINT}"/>'
+            f'<Choices name="{_esc(name)}_finding" toName="image" choice="single" showInline="true">{finding}</Choices>'
+        )
+
+    if ftype == "scale":
+        mx = int(fdef.get("max", 5))
+        return f'<Rating name="{_esc(name)}" toName="image" maxRating="{mx}" size="medium"/>'
+
+    if ftype == "flag":
+        label = _esc(fdef.get("label", "Cannot assess"))
+        return f'<Choices name="{_esc(name)}" toName="image" choice="single" showInline="true"><Choice value="{label}"/></Choices>'
+
+    # text
+    return f'<TextArea name="{_esc(name)}" toName="image" placeholder="{_esc(fdef.get("placeholder", "Notes"))}" rows="3"{req}/>'
+
+
+def _field_block(name: str, fdef: dict, classes: list, fields: dict) -> str:
+    vw = _visible_when_attrs(fdef.get("visible_when"), fields)
+    label = _esc(fdef.get("label") or name.replace("_", " ").capitalize())
+    return (
+        f'<View{vw} style="margin-bottom: 18px;">'
+        f'<Header value="{label}" style="{_SECT}"/>{_control_xml(name, fdef, classes)}</View>'
+    )
+
+
+def build_label_config(eval_config: dict) -> str:
+    """Generate a Label Studio labeling config from a project's eval_config.
+
+    Raises ValueError on an invalid config (surfaced to the operator, not swallowed).
+    """
+    if not eval_config or "schema" not in eval_config:
+        raise ValueError("eval_config missing 'schema'")
+    schema = eval_config["schema"] or {}
+    classes = schema.get("classes") or []
+    fields = schema.get("fields") or {}
+    if not fields:
+        raise ValueError("eval_config.schema.fields is empty")
+
+    title = _esc(eval_config.get("title", "Classification review"))
+    subtitle = _esc(eval_config.get("subtitle", "Review the image and complete each field."))
+    header = (
+        f'<View style="{_HEAD}"><Header value="{title}" style="{_TITLE}"/>'
+        f'<Header value="{subtitle}" style="{_SUB}"/></View>'
+    )
+    # Image renderer = Label Studio <Image> ("ls_image"); Slice #6 makes this pluggable.
+    image = (
+        f'<View style="{_CARD_HI}"><Image name="image" value="$image" '
+        f'zoom="true" zoomControl="true" rotateControl="true" width="100%"/></View>'
+    )
+    prediction = (
+        f'<View style="{_CARD}"><Header value="Model prediction" style="{_CAPS}"/>'
+        f'<Text name="prediction" value="$prediction" style="{_BODY}"/></View>'
+    )
+    body = "".join(_field_block(n, d, classes, fields) for n, d in fields.items())
+    return f'<View style="{_WRAP}">{header}{image}{prediction}{body}</View>'
 
 
 def is_configured() -> bool:
@@ -455,3 +632,15 @@ def export_tasks(ls_project_id: int) -> list:
     )
     r.raise_for_status()
     return r.json()
+
+
+def get_project(ls_project_id: int) -> dict:
+    """Project detail, including the stored label_config and LS's parsed_label_config."""
+    r = httpx.get(f"{_base()}/api/projects/{ls_project_id}/", headers=_headers(), timeout=30)
+    r.raise_for_status()
+    return r.json()
+
+
+def delete_project(ls_project_id: int) -> None:
+    r = httpx.delete(f"{_base()}/api/projects/{ls_project_id}/", headers=_headers(), timeout=30)
+    r.raise_for_status()
