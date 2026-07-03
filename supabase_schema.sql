@@ -85,6 +85,10 @@ alter table project_submissions add column if not exists ls_project_id integer;
 alter table project_submissions add column if not exists rate_per_item numeric;
 alter table project_submissions add column if not exists difficulty    text;
 
+-- Per-project eval config (Slice #1): label schema + fields + input mapping, so a new
+-- eval client is onboarded by config, not code. See README "Onboard a new eval client".
+alter table project_submissions add column if not exists eval_config jsonb;
+
 -- RLS: service key only, same as the other tables.
 alter table project_submissions enable row level security;
 
@@ -127,6 +131,35 @@ create table if not exists clinicians (
 create index if not exists clinicians_code_idx on clinicians (access_code);
 
 alter table clinicians enable row level security;
+
+-- Slice #2 isolation: which clinicians are assigned to which project. Project creation
+-- alone does NOT grant access — a clinician must be assigned here to see or label a
+-- project. Enforced by _labeler_can_access() in the work endpoints.
+create table if not exists project_clinicians (
+  project_id   uuid not null references project_submissions(id) on delete cascade,
+  clinician_id uuid not null references clinicians(id)          on delete cascade,
+  assigned_at  timestamptz not null default now(),
+  primary key (project_id, clinician_id)
+);
+alter table project_clinicians enable row level security;
+
+-- Slice #7 audit trail: an append-only log of every annotation decision. The item's
+-- current label lives on project_items; the immutable history lives here. Answers
+-- "who labeled/reviewed this item, with what value, through which channel, and when".
+create table if not exists audit_events (
+  id          uuid primary key default gen_random_uuid(),
+  item_id     uuid references project_items(id)       on delete cascade,
+  project_id  uuid references project_submissions(id) on delete cascade,
+  action      text not null,                    -- 'label' | 'review' | 'skip'
+  actor_id    text,                             -- clinician id, 'admin', or LS email
+  actor_name  text,
+  source      text not null default 'app',      -- 'app' | 'label_studio'
+  value       jsonb,                            -- snapshot of the label at this event
+  created_at  timestamptz not null default now()
+);
+create index if not exists audit_events_item_idx    on audit_events (item_id, created_at);
+create index if not exists audit_events_project_idx on audit_events (project_id, created_at desc);
+alter table audit_events enable row level security;
 
 
 -- ── Atomic task claim (the concurrency-safe work queue) ───────────────────────

@@ -12,53 +12,64 @@ const LINKS: { label: string; href: string; page: Page }[] = [
   { label: 'About',       href: '/about',      page: 'about'      },
 ]
 
-export default function NavBar({ active, onLight }: { active?: Page; onLight?: boolean }) {
+// `minimal` = the eval-business funnel: no links into the science side,
+// brand stays within /evaluate, single "Start a pilot" CTA.
+export default function NavBar({ active, onLight, minimal }: { active?: Page; onLight?: boolean; minimal?: boolean }) {
   const [open, setOpen] = useState(false)
+
+  const links = minimal ? [] : LINKS
+  const brandHref = minimal ? '/evaluate' : '/'
+  const ctaHref = minimal ? '/submit' : '/experts'
+  const ctaLabel = minimal ? 'Start a pilot →' : 'Join as specialist →'
 
   return (
     <nav className={`top scrolled${open ? ' nav-open' : ''}${onLight ? ' nav-on-light' : ''}`}>
       <div className="wrap row">
 
-        <a className="brand" href="/" onClick={() => setOpen(false)}>
+        <a className="brand" href={brandHref} onClick={() => setOpen(false)}>
           <span className="mark"><Logo size={20} /></span>
           Senebiclabs
         </a>
 
         {/* Desktop links */}
-        <div className="nav-links">
-          {LINKS.map(l => (
-            <a key={l.page} href={l.href} style={active === l.page ? { color: 'var(--ink)' } : {}}>
-              {l.label}
-            </a>
-          ))}
-        </div>
+        {!minimal && (
+          <div className="nav-links">
+            {links.map(l => (
+              <a key={l.page} href={l.href} style={active === l.page ? { color: 'var(--ink)' } : {}}>
+                {l.label}
+              </a>
+            ))}
+          </div>
+        )}
 
-        {/* Right side: CTA on desktop, hamburger on mobile */}
+        {/* Right side: CTA, plus hamburger only when there are links */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, gridColumn: 3 }}>
-          <a href="/experts" className="nav-join-cta nav-cta-desktop">Join as specialist →</a>
-          <button
-            className="nav-hamburger"
-            onClick={() => setOpen(o => !o)}
-            aria-label={open ? 'Close menu' : 'Open menu'}
-          >
-            {open ? (
-              <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                <path d="M2 2l14 14M16 2L2 16" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
-              </svg>
-            ) : (
-              <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                <path d="M2 4h14M2 9h14M2 14h14" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
-              </svg>
-            )}
-          </button>
+          <a href={ctaHref} className={minimal ? 'nav-join-cta' : 'nav-join-cta nav-cta-desktop'}>{ctaLabel}</a>
+          {!minimal && (
+            <button
+              className="nav-hamburger"
+              onClick={() => setOpen(o => !o)}
+              aria-label={open ? 'Close menu' : 'Open menu'}
+            >
+              {open ? (
+                <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                  <path d="M2 2l14 14M16 2L2 16" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+                </svg>
+              ) : (
+                <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                  <path d="M2 4h14M2 9h14M2 14h14" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+                </svg>
+              )}
+            </button>
+          )}
         </div>
 
       </div>
 
-      {/* Mobile menu */}
-      {open && (
+      {/* Mobile menu (science nav only) */}
+      {!minimal && open && (
         <div className="nav-mobile-menu">
-          {LINKS.map(l => (
+          {links.map(l => (
             <a
               key={l.page}
               href={l.href}
@@ -68,8 +79,8 @@ export default function NavBar({ active, onLight }: { active?: Page; onLight?: b
               {l.label}
             </a>
           ))}
-          <a href="/experts" className="nav-join-cta" onClick={() => setOpen(false)}>
-            Join as specialist →
+          <a href={ctaHref} className="nav-join-cta" onClick={() => setOpen(false)}>
+            {ctaLabel}
           </a>
         </div>
       )}

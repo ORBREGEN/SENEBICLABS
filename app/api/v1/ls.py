@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from app.core.config import settings
 from app.services.supabase_client import get_client
 from app.services import labelstudio as ls
+from app.services import audit
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ls", tags=["Label Studio"])
@@ -30,6 +31,24 @@ class SyncIn(BaseModel):
 
 class PullIn(BaseModel):
     project_id: str
+
+
+def _collapse_structured(label: dict) -> dict:
+    """Collapse a 'structured' field's two Label Studio controls into one object.
+
+    build_label_config renders a structured field (e.g. critical_miss) as a Yes/No flag
+    plus a '<name>_finding' picker. Those arrive as two flat sibling keys; here we merge
+    them into label[name] = {"present": bool, "finding": <class or None>} so a critical
+    miss lands as structured data, not two disconnected keys. Handles an orphan finding
+    (finding chosen but flag left blank) by reporting present=None.
+    """
+    for fk in [k for k in list(label) if k != "_result" and k.endswith("_finding")]:
+        base = fk[: -len("_finding")]
+        finding = label.pop(fk)
+        flag = label.get(base)
+        present = (flag == "Yes") if isinstance(flag, str) else flag
+        label[base] = {"present": present, "finding": finding}
+    return label
 
 
 def _parse_result(result: list) -> dict:
@@ -56,7 +75,7 @@ def _parse_result(result: list) -> dict:
             label[fn].append(val)
         else:
             label[fn] = val
-    return label
+    return _collapse_structured(label)
 
 
 @router.post("/sync", summary="Create LS project + push pending items as tasks (admin)")
@@ -68,16 +87,28 @@ def ls_sync(body: SyncIn, x_admin_key: str | None = Header(default=None)):
     if db is None:
         raise HTTPException(status_code=503, detail="Database unavailable.")
 
-    sub = db.table("project_submissions").select("id,company,ls_project_id").eq("id", body.project_id).limit(1).execute()
+    # eval_config may not exist yet (pre-migration) — degrade to the static config.
+    try:
+        sub = db.table("project_submissions").select("id,company,ls_project_id,eval_config").eq("id", body.project_id).limit(1).execute()
+    except Exception:
+        sub = db.table("project_submissions").select("id,company,ls_project_id").eq("id", body.project_id).limit(1).execute()
     if not sub.data:
         raise HTTPException(status_code=404, detail="Project not found.")
     s = sub.data[0]
     ls_pid = s.get("ls_project_id")
 
+    # Per-project schema drives the labeling config when present; otherwise fall back
+    # to a built-in task-type config (keeps existing projects working).
+    eval_config = s.get("eval_config")
+    try:
+        label_config = ls.build_label_config(eval_config) if eval_config else ls.get_config(body.task_type)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=f"Invalid eval_config: {exc}")
+
     try:
         if not ls_pid:
             title = f"{s.get('company') or 'Senebiclabs project'} — {body.task_type}"
-            ls_pid = ls.create_project(title=title, label_config=ls.get_config(body.task_type))
+            ls_pid = ls.create_project(title=title, label_config=label_config)
             db.table("project_submissions").update({"ls_project_id": ls_pid}).eq("id", body.project_id).execute()
         items = (
             db.table("project_items").select("id,content")
@@ -122,14 +153,17 @@ def ls_pull(body: PullIn, x_admin_key: str | None = Header(default=None)):
         a = anns[0]
         cb = a.get("completed_by")
         who = cb.get("email") if isinstance(cb, dict) else "clinician"
+        parsed = _parse_result(a.get("result", []))
         try:
             db.table("project_items").update({
-                "label": _parse_result(a.get("result", [])),
+                "label": parsed,
                 "status": "done",
                 "labeled_by": who,
                 "labeled_at": a.get("created_at"),
             }).eq("id", item_id).execute()
             written += 1
+            audit.record(db, item_id=item_id, project_id=body.project_id, action=audit.LABEL,
+                         actor_id=who, actor_name=who, source="label_studio", value=parsed)
         except Exception as exc:
             logger.error("LS pull item update failed (%s): %s", item_id, exc)
 
@@ -155,44 +189,33 @@ async def ls_webhook(req: Request, x_ls_secret: str | None = Header(default=None
     if not item_id:
         return {"ok": True}
 
-    # Generic parse: works for any task type. Flatten each result by its field name,
-    # and keep the raw result list for complex types (e.g. de-identification spans).
-    label: dict = {"_result": ann.get("result", [])}
-    for r in ann.get("result", []):
-        fn = r.get("from_name")
-        v = r.get("value", {}) or {}
-        if "rating" in v:
-            val = v["rating"]
-        elif "choices" in v:
-            c = v["choices"]
-            val = c[0] if isinstance(c, list) and len(c) == 1 else c
-        elif "text" in v:
-            t = v["text"]
-            val = t[0] if isinstance(t, list) and len(t) == 1 else t
-        elif "labels" in v:
-            val = {"labels": v.get("labels"), "start": v.get("start"), "end": v.get("end"), "text": v.get("text")}
-        else:
-            val = v
-        if fn in label and fn != "_result":
-            if not isinstance(label[fn], list):
-                label[fn] = [label[fn]]
-            label[fn].append(val)
-        else:
-            label[fn] = val
+    # Generic parse (same path as /ls/pull): flatten by field name, keep the raw result
+    # list, and collapse structured fields (e.g. critical_miss) into one object.
+    label = _parse_result(ann.get("result", []))
 
     db = get_client()
     if db is None:
         return {"ok": False}
+    who = ann.get("created_username") or "label-studio"
     try:
         db.table("project_items").update(
             {
                 "label": label,
                 "status": "done",
-                "labeled_by": ann.get("created_username") or "label-studio",
+                "labeled_by": who,
                 "labeled_at": ann.get("created_at"),
             }
         ).eq("id", item_id).execute()
     except Exception as exc:
         logger.error("LS webhook update failed: %s", exc)
         return {"ok": False}
+
+    # Audit needs the project id; the item carries it. Best-effort, never blocks the webhook.
+    try:
+        pr = db.table("project_items").select("project_id").eq("id", item_id).limit(1).execute()
+        project_id = pr.data[0]["project_id"] if pr.data else None
+    except Exception:
+        project_id = None
+    audit.record(db, item_id=item_id, project_id=project_id, action=audit.LABEL,
+                 actor_id=who, actor_name=who, source="label_studio", value=label)
     return {"ok": True}
