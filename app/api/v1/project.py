@@ -15,6 +15,7 @@ from app.core.config import settings
 from app.services.supabase_client import get_client
 from app.services import email_service
 from app.services import audit
+from app.services import report as report_svc
 from app.services.portal_tokens import make_token, verify_token
 
 logger = logging.getLogger(__name__)
@@ -335,6 +336,19 @@ def portal_results(token: str, project_id: str):
 def _require_admin(x_admin_key: str | None) -> None:
     if not settings.ADMIN_API_KEY or x_admin_key != settings.ADMIN_API_KEY:
         raise HTTPException(status_code=403, detail="Not authorised.")
+
+
+@router.get("/admin/report/{project_id}", summary="Model-performance report for a project (admin)")
+def admin_report(project_id: str, x_admin_key: str | None = Header(default=None)):
+    _require_admin(x_admin_key)
+    db = get_client()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable.")
+    try:
+        return {"ok": True, "report": report_svc.build_report(db, project_id)}
+    except Exception as exc:
+        logger.error("Report build failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Could not build the report.")
 
 
 @router.get("/admin/audit/{project_id}", summary="Audit trail for a project (admin)")

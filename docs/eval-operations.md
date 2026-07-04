@@ -149,6 +149,14 @@ An unassigned work code gets `403` from every work endpoint.
   the full audit trail at `GET /project/admin/audit/{project_id}` — who labeled/reviewed each
   item, with what value, through which channel, and when. Corrections re-run `/work/label`
   (the operator can label anything) and land as `review` events; nothing is overwritten silently.
+- **Build the client deliverable (the report):** `python scripts/report.py --project-id <id>
+  --out-dir ./out` turns the pulled verdicts into the model-performance report — headline
+  accuracy, per-class precision/recall/F1, confusion matrix, the critical-miss list, named
+  failure cases, and an explicit exclusion/caveat section. Writes `.json` (full), `.md`
+  (hand to the client), and `_cases.csv` (every case). Same data is available at
+  `GET /project/admin/report/{project_id}`. Run `/ls/pull` first so verdicts are in the DB.
+  Note: ground truth = the model's prediction on Correct cases, the corrected label on
+  wrong cases; cannot-assess/unlabeled/incomplete cases are excluded and stated, not guessed.
 - **Deliver:** advance the project to stage `delivered` (`POST /project/admin/advance`). The
   customer then requests a magic link (`/portal/request`), signs in (`/portal/projects`), and
   downloads via `GET /project/portal/results` — which enforces email ownership AND
