@@ -3,11 +3,12 @@
 import { useState } from 'react'
 import Logo from './Logo'
 
-type Page = 'home' | 'patients' | 'about' | 'analyse' | 'experts' | 'contribute'
+type Page = 'home' | 'patients' | 'about' | 'analyse' | 'experts' | 'contribute' | 'aiteams'
 
 const LINKS: { label: string; href: string; page: Page }[] = [
   { label: 'Patients',    href: '/patients',   page: 'patients'   },
   { label: 'Specialists', href: '/experts',    page: 'experts'    },
+  { label: 'For AI teams', href: '/evaluate', page: 'aiteams'   },
   { label: 'Contribute',  href: '/contribute', page: 'contribute' },
   { label: 'About',       href: '/about',      page: 'about'      },
 ]

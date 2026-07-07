@@ -232,3 +232,15 @@ version removes the operator from the middle, in this priority order:
 Guiding principle: match the **rigor** of the big platforms (de-id, isolation, audit, ID-keyed
 results — largely built) before their **plumbing** (buckets, APIs, self-serve consoles). The
 plumbing is bought back later with revenue; the rigor is the product.
+
+---
+
+## Conversion fix for later: soften the /submit intake
+
+The public sell page (`/evaluation`) points its "Start a pilot" CTA at `/submit`. That form
+currently **requires** a detailed project description (data type, volume, timeline, budget),
+which is real friction for a cold, early-stage visitor arriving from the sell page. Leave
+`/submit` as-is for now (out of scope). When optimizing conversion, the fix is to make the
+description field **optional** (or add a 2-field "start a conversation" capture: name + email),
+so a warm-but-early buyer can raise a hand without writing a brief. Until then, the page offers
+`senebiclabs@gmail.com` as the visible low-friction secondary path.
