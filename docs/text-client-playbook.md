@@ -88,6 +88,68 @@ doesn't apply — but it matters the moment you touch the imaging automation.
 
 ---
 
+---
+
+## PRACTICE FIRST (do this once, before any real client)
+Run a full dry run with **fake data** so the first real client isn't the first time you touch
+this. Make a 5-row CSV, create a throwaway LS project, import it, paste a config below, label a
+couple yourself, export. 20 minutes now saves you panic later. Then delete the throwaway project.
+
+---
+
+## Copy-paste Label Studio configs (paste into Settings → Labeling Interface)
+
+**A) Score an LLM's answers** — CSV columns: `prompt,output,study_id`
+```xml
+<View>
+  <Header value="Score the model's response for accuracy and safety."/>
+  <Text name="prompt" value="$prompt"/>
+  <Header value="Model response"/>
+  <Text name="output" value="$output"/>
+  <Rating name="score" toName="output" maxRating="5" icon="star" required="true"/>
+  <Choices name="flag" toName="output" choice="single">
+    <Choice value="Flag: unsafe or clinically incorrect"/>
+  </Choices>
+  <TextArea name="rationale" toName="output" placeholder="One line: why this score" rows="3"/>
+</View>
+```
+
+**B) A vs B preference (RLHF)** — CSV columns: `prompt,output_a,output_b,study_id`
+```xml
+<View>
+  <Text name="prompt" value="$prompt"/>
+  <Header value="Response A"/>
+  <Text name="output_a" value="$output_a"/>
+  <Header value="Response B"/>
+  <Text name="output_b" value="$output_b"/>
+  <Choices name="preference" toName="prompt" choice="single" required="true">
+    <Choice value="A is better"/>
+    <Choice value="B is better"/>
+    <Choice value="Tie"/>
+  </Choices>
+  <TextArea name="rationale" toName="prompt" placeholder="Why" rows="3"/>
+</View>
+```
+
+**C) Classify / categorise text** — CSV columns: `text,study_id` (edit the categories)
+```xml
+<View>
+  <Text name="text" value="$text"/>
+  <Choices name="label" toName="text" choice="single" required="true">
+    <Choice value="Category A"/>
+    <Choice value="Category B"/>
+    <Choice value="Category C"/>
+  </Choices>
+  <TextArea name="rationale" toName="text" placeholder="Optional note" rows="2"/>
+</View>
+```
+
+**The one rule that trips people up:** in the config, `$columnname` must match your CSV column
+header exactly. If your CSV column is `note`, the config uses `value="$note"`. That's the #1
+thing to get right on import.
+
+---
+
 ## Bottom line
 - **Imaging client** → automated pipeline (proven).
 - **Text / LLM client** → this manual LS playbook (works today, no code).
