@@ -114,10 +114,48 @@ def test_missing_correct_label_not_silently_dropped():
     assert any("EXCLUDED" in cav for cav in rep["caveats"])
 
 
+def test_case_id_passthrough():
+    # The client's own case id (here the 'study_id' column, spread into content at ingest)
+    # must ride through to every verdict — bound to THEIR id, not our row index.
+    items = [
+        {"idx": 0, "status": "done",
+         "content": {"image": "img0", "prediction": "Normal", "study_id": "ACC-1001"},
+         "label": {"verdict": "Correct"}},
+        {"idx": 1, "status": "done",
+         "content": {"image": "img1", "prediction": "TB", "study_id": "ACC-1002"},
+         "label": {"verdict": "Incorrect", "correct_label": "Pneumonia",
+                   "critical_miss": {"present": True, "finding": "Pneumonia"}}},
+    ]
+    # 'study_id' is picked up by convention (no config needed)
+    rep = R.compute_report(items, ["Normal", "Pneumonia", "TB"])
+    by_idx = {c["idx"]: c for c in rep["cases"]}
+    assert by_idx[0]["case_id"] == "ACC-1001"
+    assert rep["critical_misses"][0]["case_id"] == "ACC-1002"
+    assert rep["failure_cases"][0]["case_id"] == "ACC-1002"
+
+    # An explicitly declared field wins over the convention.
+    items2 = [{"idx": 0, "status": "done",
+               "content": {"image": "i", "prediction": "Normal", "acc_no": "X-9"},
+               "label": {"verdict": "Correct"}}]
+    rep2 = R.compute_report(items2, case_id_field="acc_no")
+    assert rep2["cases"][0]["case_id"] == "X-9"
+
+    # It is surfaced in both exports.
+    csv = R.render_cases_csv(rep)
+    assert csv.splitlines()[0].startswith("case_id,")
+    assert "ACC-1001" in csv
+    md = R.render_markdown(rep)
+    assert "case id" in md and "ACC-1002" in md
+
+    # No case id present -> None, and exports still work (idx remains the fallback).
+    plain = R.compute_report([_item(0, "Normal", "Correct")], CLASSES)
+    assert plain["cases"][0]["case_id"] is None
+
+
 if __name__ == "__main__":
     for fn in [test_totals_and_exclusions, test_accuracy, test_confusion_matrix, test_per_class_prf,
                test_critical_miss_list_complete, test_failure_cases, test_support_sums_to_assessable,
-               test_missing_correct_label_not_silently_dropped]:
+               test_missing_correct_label_not_silently_dropped, test_case_id_passthrough]:
         fn()
     print("PASS: tests/test_report.py (accuracy / PRF / confusion / critical-miss / exclusions correct)\n")
     print("=" * 70)

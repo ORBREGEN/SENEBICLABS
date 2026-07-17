@@ -194,15 +194,16 @@ Both must pass. If either is hard to make pass, stop — do not weaken the test.
   so a hiccup never blocks a labeling save (see `app/services/audit.py`). When the audit
   trail becomes a client deliverable, add monitoring/alerting on the logged audit-write
   failures so a silent audit outage surfaces before a client notices a gap.
-- **Result-to-image mapping is by row index — case-id passthrough is MUST-FIX before real
-  delivery (not optional).** Today an item's identity is its `idx` = its row position in the
-  client's manifest. `ingest.plan_items` guarantees that index is stable and that a missing
-  image leaves a *visible gap*, never a shift (covered by `tests/test_ingest_order.py`), and
-  every export orders by `idx` — so order integrity holds. BUT a bare row index is a fragile
-  identity for a radiology eval: it relies on the client keeping their manifest row order.
-  Before delivering to any real client, wire their own case/study ID through
-  `extra_columns` → item content → export (part of #4), so each verdict is bound to *his*
-  identifier, not our row number. Do not deliver a real batch on row-index mapping alone.
+- **Case-id passthrough — DONE (was the MUST-FIX).** Each verdict now carries the client's
+  own case/study id, not just our row index. To turn it on for a client: include their id
+  column in the ingest mapping's `extra_columns` (e.g. `"extra_columns": ["study_id"]`) so it
+  rides into `project_items.content`; the report surfaces it automatically for common names
+  (`case_id`, `study_id`, `study_uid`, `accession`), or set `eval_config.case_id_field` to
+  name it explicitly. `report.py` then keys every case, critical miss, and CSV row by that id,
+  with `idx` kept as the internal fallback. Row-order integrity still holds
+  (`tests/test_ingest_order.py`); the passthrough is covered by
+  `tests/test_report.py::test_case_id_passthrough`. A real batch can now be delivered keyed
+  to the client's identifiers.
 
 ---
 
@@ -213,10 +214,9 @@ batch, run by hand) confirms these are the real chafe points** — not before. T
 deliberately white-glove: the client hands over files and the operator ingests. The clean
 version removes the operator from the middle, in this priority order:
 
-1. **Results keyed by the client's own IDs (highest value, smallest build).** This is the
-   case-id passthrough above, productized: every delivered verdict carries the client's study
-   ID, so results drop straight into his system with no row-order dependency. Foundation for
-   everything below. Do this first regardless of the rest.
+1. **Results keyed by the client's own IDs — DONE.** Every delivered verdict carries the
+   client's study ID, so results drop straight into their system with no row-order dependency.
+   Foundation for everything below.
 2. **Self-serve image upload.** A portal upload that accepts image *files* (today `/portal/items`
    takes JSON rows only) → straight into the private per-client bucket with the same
    de-identification and stable indexing the script does now. Removes the out-of-band transfer

@@ -90,8 +90,10 @@ def plan_items(manifest: list[dict], exists) -> tuple[list[dict], list[dict]]:
     verdicts onto the wrong X-ray. Every delivery path orders by this index.
 
     `exists(image_name) -> bool` decides whether an image is available. Returns
-    (present, gaps); each record carries its stable `idx`. Until per-client case-id
-    passthrough lands (#4, MUST-FIX before real delivery), this index is the mapping.
+    (present, gaps); each record carries its stable `idx` plus the client's declared `extra`
+    columns (e.g. study_id). Those extras are spread into item content at ingest and the
+    report surfaces them as the client's case id, so each verdict binds to THEIR identifier;
+    `idx` remains the internal fallback and the row-order integrity guarantee.
     """
     present, gaps = [], []
     for i, r in enumerate(manifest):

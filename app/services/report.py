@@ -30,6 +30,24 @@ from datetime import datetime, timezone
 CORRECT, INCORRECT, PARTIAL = "correct", "incorrect", "partial"
 THIN_SUPPORT = 10  # below this many ground-truth cases, per-class metrics are noisy
 
+# The client's OWN case identifier, surfaced so every verdict binds to their id, not our
+# row index. The operator can name the column anything and declare it via eval_config
+# ("case_id_field"); absent that, these common names are picked up automatically.
+_CASE_ID_KEYS = ("case_id", "study_id", "study_uid", "accession", "accession_number")
+
+
+def _case_id(content: dict, field: str | None):
+    """The client's case identifier for a row, or None. An explicit `field` wins; otherwise
+    fall back to the first recognised id column present in the item content."""
+    c = content or {}
+    if field and c.get(field) not in (None, ""):
+        return c.get(field)
+    for k in _CASE_ID_KEYS:
+        v = c.get(k)
+        if v not in (None, ""):
+            return v
+    return None
+
 
 def _verdict_kind(label: dict):
     v = (label or {}).get("verdict")
@@ -57,7 +75,7 @@ def _prf(tp: int, fp: int, fn: int):
     return p, r, f
 
 
-def compute_report(items: list[dict], classes=None) -> dict:
+def compute_report(items: list[dict], classes=None, case_id_field: str | None = None) -> dict:
     """Pure function: list of items ({idx, content, label, status}) -> structured report.
     `classes` is the canonical class list (e.g. from eval_config); observed classes are
     unioned in so nothing is missed."""
@@ -76,6 +94,7 @@ def compute_report(items: list[dict], classes=None) -> dict:
         kind = _verdict_kind(label)
 
         base = {"idx": idx, "image": image, "model_prediction": pred,
+                "case_id": _case_id(content, case_id_field),
                 "verdict": (label or {}).get("verdict"),
                 "confidence": (label or {}).get("radiologist_confidence"),
                 "rationale": (label or {}).get("rationale")}
@@ -101,8 +120,9 @@ def compute_report(items: list[dict], classes=None) -> dict:
             row = {**base, "ground_truth": None, "correct_label": None, "critical_miss": False,
                    "finding": None, "disposition": "excluded:missing_prediction", "reason": "no model prediction in content"}
             cases.append(row)
-            incomplete_cases.append({"idx": idx, "image": image, "verdict": base["verdict"],
-                                     "model_prediction": pred, "reason": "missing model prediction in content"})
+            incomplete_cases.append({"idx": idx, "case_id": base["case_id"], "image": image,
+                                     "verdict": base["verdict"], "model_prediction": pred,
+                                     "reason": "missing model prediction in content"})
             continue
 
         if kind == CORRECT:
@@ -115,8 +135,9 @@ def compute_report(items: list[dict], classes=None) -> dict:
                        "finding": None, "disposition": "excluded:incomplete_missing_correct_label",
                        "reason": "wrong verdict but no corrected_label"}
                 cases.append(row)
-                incomplete_cases.append({"idx": idx, "image": image, "verdict": base["verdict"],
-                                         "model_prediction": pred, "reason": "wrong verdict but no corrected_label"})
+                incomplete_cases.append({"idx": idx, "case_id": base["case_id"], "image": image,
+                                         "verdict": base["verdict"], "model_prediction": pred,
+                                         "reason": "wrong verdict but no corrected_label"})
                 continue
             truth = corrected
 
@@ -131,11 +152,12 @@ def compute_report(items: list[dict], classes=None) -> dict:
                       "critical_miss": cm_present, "finding": finding, "disposition": "assessable"})
 
         if kind in (INCORRECT, PARTIAL):
-            failure_cases.append({"idx": idx, "image": image, "verdict": base["verdict"],
-                                  "model_prediction": pred, "correct_label": corrected,
-                                  "rationale": base["rationale"]})
+            failure_cases.append({"idx": idx, "case_id": base["case_id"], "image": image,
+                                  "verdict": base["verdict"], "model_prediction": pred,
+                                  "correct_label": corrected, "rationale": base["rationale"]})
         if cm_present:
-            critical_misses.append({"idx": idx, "image": image, "model_prediction": pred,
+            critical_misses.append({"idx": idx, "case_id": base["case_id"], "image": image,
+                                    "model_prediction": pred,
                                     "correct_label": corrected if kind != CORRECT else pred,
                                     "finding": finding, "rationale": base["rationale"]})
 
@@ -207,19 +229,25 @@ def compute_report(items: list[dict], classes=None) -> dict:
 
 
 def build_report(db, project_id: str) -> dict:
-    """Fetch a project's items + eval_config classes and compute the report."""
+    """Fetch a project's items + eval_config (classes + case-id field) and compute the report."""
     classes = None
+    case_id_field = None
     try:
         sub = db.table("project_submissions").select("eval_config").eq("id", project_id).limit(1).execute()
         if sub.data and sub.data[0].get("eval_config"):
-            classes = (((sub.data[0]["eval_config"] or {}).get("schema") or {}).get("classes")) or None
+            ec = sub.data[0]["eval_config"] or {}
+            schema = ec.get("schema") or {}
+            classes = schema.get("classes") or None
+            # The column carrying the client's own case/study id, so verdicts bind to THEIR id.
+            case_id_field = ec.get("case_id_field") or schema.get("case_id_field")
     except Exception:
         classes = None
+        case_id_field = None
     rows = (
         db.table("project_items").select("idx,content,label,status")
         .eq("project_id", project_id).order("idx").execute()
     )
-    report = compute_report(rows.data or [], classes)
+    report = compute_report(rows.data or [], classes, case_id_field=case_id_field)
     report["project_id"] = project_id
     report["generated_at"] = datetime.now(timezone.utc).isoformat()
     return report
@@ -270,10 +298,10 @@ def render_markdown(rep: dict) -> str:
     out.append(f"## Critical misses ({len(rep['critical_misses'])})")
     out.append("_Cases the radiologist flagged as a clinically critical miss — the highest-priority failures._")
     if rep["critical_misses"]:
-        out.append("| idx | model said | correct | finding missed | note |")
-        out.append("|---|---|---|---|---|")
+        out.append("| case id | idx | model said | correct | finding missed | note |")
+        out.append("|---|---|---|---|---|---|")
         for c in rep["critical_misses"]:
-            out.append(f"| {c['idx']} | {c['model_prediction']} | {c.get('correct_label')} | "
+            out.append(f"| {c.get('case_id') or '—'} | {c['idx']} | {c['model_prediction']} | {c.get('correct_label')} | "
                        f"{c.get('finding')} | {(c.get('rationale') or '').replace(chr(10), ' ')} |")
     else:
         out.append("None flagged.")
@@ -281,10 +309,10 @@ def render_markdown(rep: dict) -> str:
 
     out.append(f"## Failure cases ({len(rep['failure_cases'])})")
     if rep["failure_cases"]:
-        out.append("| idx | verdict | model said | correct | note |")
-        out.append("|---|---|---|---|---|")
+        out.append("| case id | idx | verdict | model said | correct | note |")
+        out.append("|---|---|---|---|---|---|")
         for c in rep["failure_cases"]:
-            out.append(f"| {c['idx']} | {c['verdict']} | {c['model_prediction']} | "
+            out.append(f"| {c.get('case_id') or '—'} | {c['idx']} | {c['verdict']} | {c['model_prediction']} | "
                        f"{c.get('correct_label')} | {(c.get('rationale') or '').replace(chr(10), ' ')} |")
     else:
         out.append("None.")
@@ -306,7 +334,7 @@ def render_markdown(rep: dict) -> str:
 
 
 def render_cases_csv(rep: dict) -> str:
-    cols = ["idx", "disposition", "model_prediction", "ground_truth", "verdict",
+    cols = ["case_id", "idx", "disposition", "model_prediction", "ground_truth", "verdict",
             "correct_label", "critical_miss", "finding", "confidence", "rationale", "image"]
     buf = io.StringIO()
     w = csv.DictWriter(buf, fieldnames=cols, extrasaction="ignore")
