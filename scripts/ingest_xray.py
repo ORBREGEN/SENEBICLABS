@@ -59,8 +59,11 @@ def main():
     ttl = args.ttl_days * 24 * 3600
     storage.ensure_bucket(db)
 
+    # name/description are NOT NULL (the /submit form always sets them). Operator ingest has
+    # no contact person or free-text brief, so fall back to sensible values for the constraint.
     sub = db.table("project_submissions").insert({
-        "company": args.company, "email": args.email,
+        "name": args.company, "company": args.company, "email": args.email,
+        "description": f"Operator-ingested X-ray classification batch for {args.company}.",
         "task_type": "xray_classification", "status": "new",
     }).execute()
     pid = sub.data[0]["id"]
