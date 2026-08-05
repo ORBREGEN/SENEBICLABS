@@ -130,6 +130,15 @@ export default function AdminPage() {
   const [meta, setMeta] = useState<Record<string, { rate: string; difficulty: string }>>({})
   const [metaSaving, setMetaSaving] = useState<string | null>(null)
   const [metaMsg, setMetaMsg] = useState<Record<string, string>>({})
+  const [cfgOpen, setCfgOpen] = useState<string | null>(null)
+  const [cfgText, setCfgText] = useState<Record<string, string>>({})
+  const [cfgSaving, setCfgSaving] = useState<string | null>(null)
+  const [cfgMsg, setCfgMsg] = useState<Record<string, string>>({})
+  const [assigning, setAssigning] = useState<string | null>(null)
+  const [assignMsg, setAssignMsg] = useState<Record<string, string>>({})
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [reportData, setReportData] = useState<Record<string, any>>({})
+  const [reportLoading, setReportLoading] = useState<string | null>(null)
 
   const load = useCallback(async (k: string) => {
     setLoading(true)
@@ -357,6 +366,75 @@ export default function AdminPage() {
     }
   }
 
+  const CONFIG_TEMPLATE = JSON.stringify({
+    title: 'Chest X-ray classification review',
+    schema: {
+      classes: ['Normal', 'Pneumonia', 'Effusion'],
+      multi_label: false,
+      case_id_field: 'study_id',
+      fields: {
+        verdict: { type: 'single', options: ['Correct', 'Incorrect', 'Partially correct'], required: true },
+        correct_label: { type: 'from_classes', visible_when: 'verdict!=Correct' },
+        critical_miss: { type: 'structured', visible_when: 'verdict!=Correct' },
+      },
+    },
+  }, null, 2)
+
+  const toggleConfig = (id: string) => {
+    const opening = cfgOpen !== id
+    setCfgOpen(opening ? id : null)
+    if (opening && cfgText[id] === undefined) setCfgText(t => ({ ...t, [id]: CONFIG_TEMPLATE }))
+  }
+
+  const saveConfig = async (id: string) => {
+    let cfg: unknown
+    try { cfg = JSON.parse(cfgText[id] ?? '') } catch { setCfgMsg(m => ({ ...m, [id]: 'Invalid JSON — check your brackets/commas.' })); return }
+    setCfgSaving(id); setCfgMsg(m => ({ ...m, [id]: '' }))
+    try {
+      const res = await fetch('/api/admin/eval-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-key': key },
+        body: JSON.stringify({ project_id: id, eval_config: cfg }),
+      })
+      const data = await res.json()
+      if (!data.ok) throw new Error(data.message ?? 'Failed')
+      setCfgMsg(m => ({ ...m, [id]: 'Config saved ✓' }))
+    } catch (err: unknown) {
+      setCfgMsg(m => ({ ...m, [id]: err instanceof Error ? err.message : 'Failed' }))
+    } finally { setCfgSaving(null) }
+  }
+
+  const assignClinician = async (id: string, clinicianId: string) => {
+    if (!clinicianId) return
+    setAssigning(id); setAssignMsg(m => ({ ...m, [id]: '' }))
+    try {
+      const res = await fetch('/api/admin/assign-clinician', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-key': key },
+        body: JSON.stringify({ project_id: id, clinician_id: clinicianId }),
+      })
+      const data = await res.json()
+      if (!data.ok) throw new Error(data.message ?? 'Failed')
+      setAssignMsg(m => ({ ...m, [id]: 'Assigned ✓' }))
+    } catch (err: unknown) {
+      setAssignMsg(m => ({ ...m, [id]: err instanceof Error ? err.message : 'Failed' }))
+    } finally { setAssigning(null) }
+  }
+
+  const viewReport = async (id: string) => {
+    setReportLoading(id)
+    try {
+      const res = await fetch(`/api/admin/report?project=${id}`, { headers: { 'x-admin-key': key } })
+      const data = await res.json()
+      if (!data.ok) throw new Error(data.message ?? 'Failed')
+      setReportData(r => ({ ...r, [id]: data.report }))
+    } catch (err: unknown) {
+      setReportData(r => ({ ...r, [id]: { error: err instanceof Error ? err.message : 'Failed' } }))
+    } finally { setReportLoading(null) }
+  }
+
+  const rpct = (v: number | null | undefined) => (v == null ? 'n/a' : `${Math.round(v * 100)}%`)
+
   // ── Key gate ──────────────────────────────────────────────────────────────
   if (!authed) {
     return (
@@ -425,6 +503,7 @@ export default function AdminPage() {
       {subs.map(s => {
         const edit = edits[s.id] ?? { stage: 'submitted', note: '' }
         const p = prog(s)
+        const selClin = clinicians.find(c => c.id === pickClin[s.id])
         return (
           <div key={s.id} style={card}>
             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
@@ -475,7 +554,9 @@ export default function AdminPage() {
               <button onClick={() => toggleItems(s.id)} style={{ ...label, background: 'none', border: 'none', cursor: 'pointer' }}>
                 {openId === s.id ? 'Hide items ▲' : 'Add items ▼'}
               </button>
-              <a href={`/work?project=${s.id}`} style={{ ...label, color: '#15a34a', textDecoration: 'none' }}>Work queue →</a>
+              <button onClick={() => toggleConfig(s.id)} style={{ ...label, background: 'none', border: 'none', cursor: 'pointer', color: '#2563EB' }}>
+                {cfgOpen === s.id ? 'Hide config ▲' : 'Set config ▼'}
+              </button>
               <button onClick={() => exportProject(s.id, s.company)} style={{ ...label, background: 'none', border: 'none', cursor: 'pointer' }}>Export labels ↓</button>
               {p.total > 0 && (
                 <select value={lsType[s.id] ?? 'eval_rating'} onChange={e => setLsType(t => ({ ...t, [s.id]: e.target.value }))} style={{ ...input, padding: '6px 8px', fontSize: 12, cursor: 'pointer' }}>
@@ -491,6 +572,9 @@ export default function AdminPage() {
               <button onClick={() => lsPull(s.id)} disabled={lsSyncing === s.id} style={{ ...label, background: 'none', border: 'none', cursor: 'pointer', color: '#2563EB' }}>
                 Pull results ↓
               </button>
+              <button onClick={() => viewReport(s.id)} disabled={reportLoading === s.id} style={{ ...label, background: 'none', border: 'none', cursor: 'pointer', color: '#2563EB' }}>
+                {reportLoading === s.id ? 'Building…' : 'View report ↧'}
+              </button>
               {p.total > 0 && <span style={label}>{p.done}/{p.total} labeled</span>}
               {lsMsg[s.id] && <span style={{ ...label, color: lsMsg[s.id].startsWith('Sent') ? '#15a34a' : '#dc2626' }}>{lsMsg[s.id]}</span>}
               {clinicians.length > 0 && (
@@ -500,14 +584,20 @@ export default function AdminPage() {
                     onChange={e => setPickClin(pc => ({ ...pc, [s.id]: e.target.value }))}
                     style={{ ...input, padding: '6px 10px', fontSize: 12.5, cursor: 'pointer' }}
                   >
-                    <option value="">Clinician link…</option>
-                    {clinicians.map(c => <option key={c.id} value={c.access_code}>{c.name}</option>)}
+                    <option value="">Clinician…</option>
+                    {clinicians.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
-                  {pickClin[s.id] && (
-                    <button onClick={() => copyLink(s.id, pickClin[s.id])} style={{ ...label, background: 'none', border: 'none', cursor: 'pointer', color: '#15a34a' }}>
-                      {copied === s.id + pickClin[s.id] ? 'Copied ✓' : 'Copy link'}
-                    </button>
+                  {selClin && (
+                    <>
+                      <button onClick={() => assignClinician(s.id, selClin.id)} disabled={assigning === s.id} style={{ ...label, background: 'none', border: 'none', cursor: 'pointer', color: '#2563EB' }}>
+                        {assigning === s.id ? 'Assigning…' : 'Assign'}
+                      </button>
+                      <button onClick={() => copyLink(s.id, selClin.access_code)} style={{ ...label, background: 'none', border: 'none', cursor: 'pointer', color: '#15a34a' }}>
+                        {copied === s.id + selClin.access_code ? 'Copied ✓' : 'Copy link'}
+                      </button>
+                    </>
                   )}
+                  {assignMsg[s.id] && <span style={{ ...label, color: assignMsg[s.id].includes('✓') ? '#15a34a' : '#dc2626' }}>{assignMsg[s.id]}</span>}
                 </span>
               )}
             </div>
@@ -528,6 +618,59 @@ export default function AdminPage() {
               </button>
               {metaMsg[s.id] && <span style={{ ...label, color: metaMsg[s.id].includes('✓') ? '#15a34a' : '#dc2626' }}>{metaMsg[s.id]}</span>}
             </div>
+
+            {cfgOpen === s.id && (
+              <div style={{ marginTop: 16, padding: 16, border: '1px solid #eef0f2', borderRadius: 10, background: '#fafbfc' }}>
+                <p style={{ ...label, marginBottom: 4 }}>Task config</p>
+                <p style={{ fontSize: 12.5, color: '#475569', marginBottom: 10 }}>Edit the <code style={{ fontFamily: 'Geist Mono, monospace' }}>classes</code> to match the client&apos;s labels. This defines the labelling task and how the report is scored.</p>
+                <textarea
+                  value={cfgText[s.id] ?? ''}
+                  onChange={e => setCfgText(t => ({ ...t, [s.id]: e.target.value }))}
+                  spellCheck={false}
+                  style={{ width: '100%', minHeight: 240, boxSizing: 'border-box', fontFamily: 'Geist Mono, monospace', fontSize: 12.5, lineHeight: 1.5, padding: 12, border: '1px solid #d6dae0', borderRadius: 8, color: '#0f172a', background: '#ffffff', resize: 'vertical' }}
+                />
+                <div style={{ display: 'flex', gap: 14, alignItems: 'center', marginTop: 12, flexWrap: 'wrap' }}>
+                  <button style={btn} onClick={() => saveConfig(s.id)} disabled={cfgSaving === s.id}>{cfgSaving === s.id ? 'Saving…' : 'Save config'}</button>
+                  <button onClick={() => setCfgText(t => ({ ...t, [s.id]: CONFIG_TEMPLATE }))} style={{ ...label, background: 'none', border: 'none', cursor: 'pointer' }}>Reset to template</button>
+                  {cfgMsg[s.id] && <span style={{ ...label, color: cfgMsg[s.id].includes('✓') ? '#15a34a' : '#dc2626' }}>{cfgMsg[s.id]}</span>}
+                </div>
+              </div>
+            )}
+
+            {reportData[s.id] && (
+              <div style={{ marginTop: 16, padding: 16, border: '1px solid #d9f0e0', background: '#f4fbf6', borderRadius: 10 }}>
+                {reportData[s.id].error ? (
+                  <p style={{ color: '#dc2626', fontSize: 13 }}>{reportData[s.id].error}</p>
+                ) : (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
+                      <span style={{ ...label, color: '#15803d' }}>Report</span>
+                      <button onClick={() => setReportData(r => { const n = { ...r }; delete n[s.id]; return n })} style={{ ...label, background: 'none', border: 'none', cursor: 'pointer' }}>Hide</button>
+                    </div>
+                    <p style={{ fontSize: 15, margin: '8px 0 4px' }}>
+                      <strong style={{ fontSize: 22 }}>{rpct(reportData[s.id].accuracy?.value)}</strong>{' '}
+                      accuracy
+                      {reportData[s.id].accuracy?.assessable != null && (
+                        <span style={{ color: '#475569' }}> — {reportData[s.id].accuracy?.correct}/{reportData[s.id].accuracy?.assessable} correct</span>
+                      )}
+                    </p>
+                    {Array.isArray(reportData[s.id].critical_misses) && reportData[s.id].critical_misses.length > 0 && (
+                      <div style={{ marginTop: 12 }}>
+                        <span style={{ ...label, color: '#b91c1c' }}>Critical misses ({reportData[s.id].critical_misses.length})</span>
+                        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                        {reportData[s.id].critical_misses.map((c: any, i: number) => (
+                          <div key={i} style={{ fontSize: 13, marginTop: 6, lineHeight: 1.5 }}>
+                            <code style={{ fontFamily: 'Geist Mono, monospace', color: '#334155' }}>{c.case_id || `#${c.idx}`}</code>
+                            {' — model said '}<strong>{c.model_prediction ?? '—'}</strong>
+                            {', clinician read '}<strong>{c.correct_label ?? '—'}</strong>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
 
             {openId === s.id && (
               <div style={{ marginTop: 16 }}>

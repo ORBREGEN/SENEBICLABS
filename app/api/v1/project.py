@@ -129,6 +129,16 @@ class ClinicianIn(BaseModel):
     email: EmailStr | None = None
 
 
+class EvalConfigIn(BaseModel):
+    project_id: str
+    eval_config: dict
+
+
+class AssignClinicianIn(BaseModel):
+    project_id: str
+    clinician_id: str
+
+
 # ── Submit ─────────────────────────────────────────────────────────────────────
 
 @router.post("/submit", response_model=SubmissionResponse, summary="Submit an annotation project")
@@ -517,6 +527,26 @@ def admin_set_meta(body: ProjectMetaIn, x_admin_key: str | None = Header(default
             )
         raise HTTPException(status_code=500, detail="Could not save.")
     return SubmissionResponse(ok=True, message="Saved.")
+
+
+@router.post("/admin/eval-config", response_model=SubmissionResponse, summary="Set a project's eval config / task schema (admin)")
+def admin_set_eval_config(body: EvalConfigIn, x_admin_key: str | None = Header(default=None)):
+    _require_admin(x_admin_key)
+    db = get_client()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable.")
+    # Validate it renders BEFORE saving — a broken schema fails here, not later at sync.
+    try:
+        from app.services import labelstudio as ls
+        ls.build_label_config(body.eval_config)
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"Invalid eval config: {exc}")
+    try:
+        db.table("project_submissions").update({"eval_config": body.eval_config}).eq("id", body.project_id).execute()
+    except Exception as exc:
+        logger.error("Set eval_config failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Could not save the config.")
+    return SubmissionResponse(ok=True, message="Config saved.")
 
 
 # ── Work: items + labeling ──────────────────────────────────────────────────────
@@ -910,6 +940,27 @@ def admin_create_clinician(body: ClinicianIn, x_admin_key: str | None = Header(d
         "ok": True,
         "clinician": {"id": c["id"], "name": c["name"], "email": c.get("email"), "access_code": code},
     }
+
+
+@router.post("/admin/assign-clinician", response_model=SubmissionResponse, summary="Assign a clinician to a project (admin)")
+def admin_assign_clinician(body: AssignClinicianIn, x_admin_key: str | None = Header(default=None)):
+    _require_admin(x_admin_key)
+    db = get_client()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable.")
+    try:
+        existing = (
+            db.table("project_clinicians").select("id")
+            .eq("project_id", body.project_id).eq("clinician_id", body.clinician_id).limit(1).execute()
+        )
+        if not existing.data:  # idempotent — never double-assign
+            db.table("project_clinicians").insert(
+                {"project_id": body.project_id, "clinician_id": body.clinician_id}
+            ).execute()
+    except Exception as exc:
+        logger.error("Assign clinician failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Could not assign the clinician.")
+    return SubmissionResponse(ok=True, message="Clinician assigned.")
 
 
 @router.get("/admin/clinicians", summary="List clinicians (admin)")
