@@ -328,7 +328,14 @@ def portal_results(token: str, project_id: str):
     except Exception as exc:
         logger.error("Portal results fetch failed: %s", exc)
         raise HTTPException(status_code=500, detail="Could not load results. Please try again.")
-    return {"ok": True, "company": s.get("company"), "items": rows.data or []}
+    # The computed model-performance report, so the client sees accuracy + critical misses
+    # in the portal itself, not just the raw reviewed data.
+    try:
+        rep = report_svc.build_report(db, project_id)
+    except Exception as exc:
+        logger.error("Portal report build failed: %s", exc)
+        rep = None
+    return {"ok": True, "company": s.get("company"), "items": rows.data or [], "report": rep}
 
 
 # ── Admin ──────────────────────────────────────────────────────────────────────

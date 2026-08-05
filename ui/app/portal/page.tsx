@@ -152,42 +152,109 @@ function toCSV(items: ResultItem[]): string {
   return lines.join('\n')
 }
 
-function ResultsDownload({ project, token }: { project: Project; token: string }) {
-  const [busy, setBusy] = useState(false)
+type Report = {
+  accuracy: { correct: number; assessable: number; value: number | null }
+  per_class: Record<string, { support: number; precision: number | null; recall: number | null }>
+  confusion_matrix: { labels: string[]; matrix: number[][] }
+  critical_misses: { case_id: string | null; idx: number; model_prediction: string; correct_label: string | null }[]
+}
+const pct = (v: number | null | undefined) => (v == null ? 'n/a' : `${Math.round(v * 100)}%`)
+
+function DeliveredResults({ project, token }: { project: Project; token: string }) {
+  const [items, setItems] = useState<ResultItem[] | null>(null)
+  const [report, setReport] = useState<Report | null>(null)
   const [err, setErr] = useState('')
 
-  const download = async (fmt: 'json' | 'csv') => {
-    setBusy(true); setErr('')
-    try {
-      const res = await fetch(`/api/portal/results?token=${encodeURIComponent(token)}&project=${encodeURIComponent(project.id)}`)
-      const data = await res.json()
-      if (!data.ok) throw new Error(data.message ?? 'Could not download results.')
-      const items: ResultItem[] = data.items ?? []
-      const base = (project.company || 'results').replace(/\s+/g, '_')
-      const blob = fmt === 'json'
-        ? new Blob([JSON.stringify(items, null, 2)], { type: 'application/json' })
-        : new Blob([toCSV(items)], { type: 'text/csv' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url; a.download = `${base}_results.${fmt}`; a.click()
-      URL.revokeObjectURL(url)
-    } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Could not download results.')
-    } finally { setBusy(false) }
+  useEffect(() => {
+    fetch(`/api/portal/results?token=${encodeURIComponent(token)}&project=${encodeURIComponent(project.id)}`)
+      .then(r => r.json())
+      .then(d => {
+        if (!d.ok) throw new Error(d.message ?? 'Could not load results.')
+        setItems(d.items ?? [])
+        setReport(d.report ?? null)
+      })
+      .catch(e => setErr(e instanceof Error ? e.message : 'Could not load results.'))
+  }, [project.id, token])
+
+  const download = (fmt: 'json' | 'csv') => {
+    if (!items) return
+    const base = (project.company || 'results').replace(/\s+/g, '_')
+    const blob = fmt === 'json'
+      ? new Blob([JSON.stringify(items, null, 2)], { type: 'application/json' })
+      : new Blob([toCSV(items)], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a'); a.href = url; a.download = `${base}_results.${fmt}`; a.click()
+    URL.revokeObjectURL(url)
   }
 
   const btn: React.CSSProperties = { padding: '11px 18px', borderRadius: 10, fontSize: 14, fontWeight: 600, cursor: 'pointer', border: '1px solid #111', background: '#111', color: '#fff' }
   const ghost: React.CSSProperties = { ...btn, background: '#fff', color: '#111' }
+  const cell: React.CSSProperties = { padding: '9px 12px', borderBottom: '1px solid #eee', fontSize: 14 }
+  const num: React.CSSProperties = { ...cell, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }
+
+  if (err) return <p style={{ color: '#dc2626', fontSize: 13, marginTop: 20 }}>{err}</p>
+  if (!items) return <p style={{ fontSize: 15, color: 'var(--slate)', marginTop: 24 }}>Loading your results…</p>
+
+  const acc = report?.accuracy
+  const classes = report?.confusion_matrix.labels ?? []
 
   return (
-    <div className="pt-status" style={{ marginTop: 24, border: '1px solid #d9f0e0', background: '#f4fbf6', borderRadius: 14, padding: '18px 20px' }}>
+    <div style={{ marginTop: 24, border: '1px solid #d9f0e0', background: '#f4fbf6', borderRadius: 14, padding: '22px 24px' }}>
       <span className="micro" style={{ display: 'block', marginBottom: 6, color: '#15803d' }}>Results ready</span>
-      <p className="pt-status-desc" style={{ marginBottom: 14 }}>Your annotated dataset is complete. Download it below.</p>
+
+      {report && acc && (
+        <>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 14, flexWrap: 'wrap', margin: '4px 0 22px' }}>
+            <span style={{ fontFamily: 'Geist, sans-serif', fontWeight: 300, fontSize: 46, lineHeight: 1, letterSpacing: '-0.02em', color: '#111' }}>{pct(acc.value)}</span>
+            <span style={{ fontSize: 14, color: '#3a4655', maxWidth: 320, lineHeight: 1.5 }}>of your model&rsquo;s outputs agreed with the clinician, on {acc.assessable} reviewed cases.</span>
+          </div>
+
+          <span className="micro" style={{ display: 'block', marginBottom: 8, color: '#3d5878' }}>Per-finding performance</span>
+          <div style={{ overflowX: 'auto', background: '#fff', border: '1px solid #eee', borderRadius: 10, marginBottom: 22 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead><tr>
+                <th style={{ ...cell, textAlign: 'left', color: '#3d5878', fontWeight: 600 }}>Finding</th>
+                <th style={{ ...num, color: '#3d5878', fontWeight: 600 }}>n</th>
+                <th style={{ ...num, color: '#3d5878', fontWeight: 600 }}>Precision</th>
+                <th style={{ ...num, color: '#3d5878', fontWeight: 600 }}>Recall</th>
+              </tr></thead>
+              <tbody>
+                {classes.map(c => { const m = report.per_class[c]; return (
+                  <tr key={c}>
+                    <td style={{ ...cell, textAlign: 'left' }}>{c}</td>
+                    <td style={num}>{m?.support ?? 0}</td>
+                    <td style={num}>{pct(m?.precision)}</td>
+                    <td style={num}>{pct(m?.recall)}</td>
+                  </tr>) })}
+              </tbody>
+            </table>
+          </div>
+
+          {report.critical_misses.length > 0 && (
+            <div style={{ marginBottom: 22 }}>
+              <span className="micro" style={{ display: 'block', marginBottom: 8, color: '#b91c1c' }}>Critical misses ({report.critical_misses.length}) — findings the clinician caught, the model didn&rsquo;t</span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {report.critical_misses.map((c, i) => (
+                  <div key={i} style={{ background: '#fff', border: '1px solid #f0d0d0', borderLeft: '3px solid #b91c1c', borderRadius: 8, padding: '10px 14px', fontSize: 14 }}>
+                    <span style={{ fontFamily: 'monospace', fontSize: 12, color: '#666' }}>{c.case_id || `#${c.idx}`}</span>
+                    {' — model said '}<strong>{c.model_prediction}</strong>{', clinician read '}<strong>{c.correct_label}</strong>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <p style={{ fontSize: 12.5, color: '#3a4655', lineHeight: 1.6, marginBottom: 18 }}>
+            Measured on the {acc.assessable} reviewed cases — this describes your model&rsquo;s agreement with the clinician on this sample, not its accuracy across a full population.
+          </p>
+        </>
+      )}
+
+      <p style={{ fontSize: 14, color: '#111', marginBottom: 12 }}>Download the full reviewed dataset:</p>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-        <button style={btn} onClick={() => download('json')} disabled={busy}>{busy ? 'Preparing…' : 'Download JSON'}</button>
-        <button style={ghost} onClick={() => download('csv')} disabled={busy}>Download CSV</button>
+        <button style={btn} onClick={() => download('json')}>Download JSON</button>
+        <button style={ghost} onClick={() => download('csv')}>Download CSV</button>
       </div>
-      {err && <p style={{ color: '#dc2626', fontSize: 13, marginTop: 10 }}>{err}</p>}
     </div>
   )
 }
@@ -207,7 +274,7 @@ function Tracker({ project, token, onUploaded }: { project: Project; token: stri
         <p className="pt-status-desc">{project.stage_note || STAGES[current].desc}</p>
       </div>
 
-      {project.stage === 'delivered' && <ResultsDownload project={project} token={token} />}
+      {project.stage === 'delivered' && <DeliveredResults project={project} token={token} />}
 
       {project.description && (
         <div className="pt-brief">
