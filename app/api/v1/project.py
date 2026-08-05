@@ -336,6 +336,9 @@ async def portal_upload_image(
         content = {"image": url, "prediction": (prediction or None)}
         if study_id:
             content["study_id"] = study_id
+        # Idempotent per row: re-uploading the same idx replaces it, never duplicates
+        # (guards against double-clicks and re-runs of the same batch).
+        db.table("project_items").delete().eq("project_id", project_id).eq("idx", int(idx)).execute()
         db.table("project_items").insert({"project_id": project_id, "idx": int(idx), "content": content}).execute()
     except Exception as exc:
         logger.error("Portal image upload failed: %s", exc)
