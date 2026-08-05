@@ -8,7 +8,7 @@ import logging
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, HTTPException, Header, File, Form, UploadFile
 from pydantic import BaseModel, EmailStr
 
 from app.core.config import settings
@@ -16,6 +16,7 @@ from app.services.supabase_client import get_client
 from app.services import email_service
 from app.services import audit
 from app.services import report as report_svc
+from app.services import storage
 from app.services.portal_tokens import make_token, verify_token
 
 logger = logging.getLogger(__name__)
@@ -297,6 +298,49 @@ def portal_add_items(body: PortalItemsIn):
 
     logger.info("Customer %s uploaded %d items to %s", email, len(body.items), body.project_id)
     return SubmissionResponse(ok=True, message=f"Uploaded {len(body.items)} items.")
+
+
+@router.post("/portal/upload-image", response_model=SubmissionResponse, summary="Customer uploads one image file for their own project")
+async def portal_upload_image(
+    token: str = Form(...),
+    project_id: str = Form(...),
+    idx: int = Form(...),
+    prediction: str = Form(default=""),
+    study_id: str = Form(default=""),
+    file: UploadFile = File(...),
+):
+    """Self-serve image intake: the client uploads one image + its manifest row (idx,
+    prediction, study id). Stored under the client's private prefix with a de-identified key,
+    then a review task is created — the same isolation/de-id the operator script does."""
+    email = verify_token(token)
+    if not email:
+        raise HTTPException(status_code=401, detail="This session has expired. Request a new sign-in link.")
+    db = get_client()
+    if db is None:
+        raise HTTPException(status_code=503, detail="The portal is temporarily unavailable. Please try again shortly.")
+    # The customer may only upload to a project that belongs to their email.
+    try:
+        sub = db.table("project_submissions").select("id,email").eq("id", project_id).limit(1).execute()
+    except Exception as exc:
+        logger.error("Portal image-upload ownership check failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Could not upload. Please try again.")
+    if not sub.data or sub.data[0].get("email") != email:
+        raise HTTPException(status_code=403, detail="That project is not on this account.")
+
+    try:
+        client_id = storage.client_id_for(email)
+        storage.ensure_bucket(db)
+        data = await file.read()
+        key = storage.upload_image_bytes(client_id, file.filename or "image.png", data, db)
+        url = storage.signed_url(key, 30 * 24 * 3600, db)  # 30-day review window
+        content = {"image": url, "prediction": (prediction or None)}
+        if study_id:
+            content["study_id"] = study_id
+        db.table("project_items").insert({"project_id": project_id, "idx": int(idx), "content": content}).execute()
+    except Exception as exc:
+        logger.error("Portal image upload failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Could not upload that image. Please try again.")
+    return SubmissionResponse(ok=True, message=f"Uploaded {file.filename}")
 
 
 @router.get("/portal/results", summary="Customer downloads their delivered results (magic-link token)")
