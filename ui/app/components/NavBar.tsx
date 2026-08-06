@@ -14,14 +14,14 @@ const LINKS: { label: string; href: string; page: Page }[] = [
 ]
 
 // `minimal` = the eval-business funnel: no links into the science side,
-// brand stays within /evaluate, single "Start a pilot" CTA.
+// brand stays within /evaluate, single "Book a demo" CTA.
 export default function NavBar({ active, onLight, minimal }: { active?: Page; onLight?: boolean; minimal?: boolean }) {
   const [open, setOpen] = useState(false)
 
   const links = minimal ? [] : LINKS
   const brandHref = minimal ? '/evaluate' : '/'
   const ctaHref = minimal ? '/submit' : '/experts'
-  const ctaLabel = minimal ? 'Start a pilot →' : 'Join as specialist →'
+  const ctaLabel = minimal ? 'Book a demo →' : 'Join as specialist →'
 
   return (
     <nav className={`top scrolled${open ? ' nav-open' : ''}${onLight ? ' nav-on-light' : ''}`}>

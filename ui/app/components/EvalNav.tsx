@@ -27,7 +27,7 @@ export default function EvalNav() {
 
         {/* Persistent CTA — always visible, including mobile */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, gridColumn: 3 }}>
-          <a href="/submit" className="nav-join-cta">Start a pilot →</a>
+          <a href="/submit" className="nav-join-cta">Book a demo →</a>
         </div>
 
       </div>

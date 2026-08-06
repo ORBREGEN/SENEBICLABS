@@ -58,7 +58,7 @@ function Cell({ tag, title, body }: { tag?: string; title: string; body: string;
 function Cta({ center = false }: { center?: boolean }) {
   return (
     <div style={{ display: 'flex', gap: 28, alignItems: 'center', flexWrap: 'wrap', justifyContent: center ? 'center' : 'flex-start' }}>
-      <a href="/submit" className="nav-join-cta">Start a pilot →</a>
+      <a href="/submit" className="nav-join-cta">Book a demo →</a>
       <a href="mailto:senebiclabs@gmail.com" className="iso-cta iso-cta--muted" style={{ textTransform: 'none', fontSize: 13, letterSpacing: '0.03em' }}>
         or just email us →
       </a>
@@ -222,7 +222,7 @@ export default function EvaluatePage() {
             Prove your medical AI <em style={em}>works</em>.
           </h2>
           <p style={{ ...T_SUB, maxWidth: 560, margin: '28px auto 0' }}>
-            Start with a pilot. See where your model is right, where it fails, and what it missed.
+            Book a demo — see where your model is right, where it fails, and what it missed.
           </p>
           <div style={{ marginTop: 52, display: 'flex', justifyContent: 'center' }}>
             <Cta center />
