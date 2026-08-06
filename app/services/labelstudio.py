@@ -614,15 +614,19 @@ def build_label_config(eval_config: dict) -> str:
 def required_data_keys(eval_config: dict | None) -> list[str]:
     """Data keys every task MUST carry for this config to import into Label Studio.
 
-    LS rejects a task when a media object tag (<Image>) has no value, but renders an
-    empty <Text> without complaint. So the only hard requirement is the image key for
-    image configs; text configs impose none.
+    LS's import validates every object tag (<Image>, <Text>, …) and rejects a task
+    that is missing any `value="$key"` the config references — for image AND text
+    configs alike. So we derive the requirement straight from the generated config
+    rather than guessing per mode; a control-only field (Choices/Rating) has no
+    `value="$…"` and imposes nothing.
     """
     if not eval_config:
         return []
-    schema = eval_config.get("schema") or {}
-    input_type = str(schema.get("input") or eval_config.get("input") or "image").lower()
-    return [] if input_type == "text" else ["image"]
+    try:
+        cfg = build_label_config(eval_config)
+    except ValueError:
+        return []
+    return sorted(set(re.findall(r'value="\$(\w+)"', cfg)))
 
 
 def update_project_config(ls_project_id: int, label_config: str) -> None:

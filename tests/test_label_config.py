@@ -89,8 +89,10 @@ def test_text_mode_binds_controls_to_an_anchor():
 
 
 def test_required_data_keys_by_input_type():
-    assert required_data_keys(SAMPLE) == ["image"]      # image is the default
-    assert required_data_keys(TEXT_SAMPLE) == []         # text imposes no hard key
+    # Derived from the config's object tags: image mode needs the image + prediction
+    # it displays; text mode needs the prompt + output it displays.
+    assert required_data_keys(SAMPLE) == ["image", "prediction"]
+    assert required_data_keys(TEXT_SAMPLE) == ["output", "prompt"]
     assert required_data_keys(None) == []
 
 

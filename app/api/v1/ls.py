@@ -121,12 +121,16 @@ def ls_sync(body: SyncIn, x_admin_key: str | None = Header(default=None)):
     for k in ls.required_data_keys(eval_config):
         n_missing = sum(1 for r in rows if not (r.get("content") or {}).get(k))
         if n_missing:
+            hint = (
+                " For images, upload them through the client portal so each item gets an image URL — "
+                "a plain CSV of filenames can't carry the images."
+                if k == "image"
+                else f" Add a '{k}' column to your data, or switch to a config that matches it."
+            )
             raise HTTPException(
                 status_code=422,
                 detail=(
-                    f"This project is set up for images, but {n_missing} of {len(rows)} item(s) "
-                    f"have no '{k}'. Each item needs a viewable image URL under '{k}' — upload the "
-                    f"images through the client portal, or switch the config to a text task."
+                    f"{n_missing} of {len(rows)} item(s) have no '{k}' value, which this task needs.{hint}"
                 ),
             )
 
