@@ -91,9 +91,13 @@ def compute_report(items: list[dict], classes=None, case_id_field: str | None = 
         label = it.get("label") or {}
         image = content.get("image")
         pred = content.get("prediction")
+        # The input the case was judged on — the patient message / prompt for text
+        # tasks (the image carries it for image tasks). Surfaced so a flagged miss
+        # shows *what* was asked, not just the labels.
+        prompt = content.get("prompt") or content.get("text") or content.get("question")
         kind = _verdict_kind(label)
 
-        base = {"idx": idx, "image": image, "model_prediction": pred,
+        base = {"idx": idx, "image": image, "prompt": prompt, "model_prediction": pred,
                 "case_id": _case_id(content, case_id_field),
                 "verdict": (label or {}).get("verdict"),
                 "confidence": (label or {}).get("radiologist_confidence"),
@@ -153,10 +157,12 @@ def compute_report(items: list[dict], classes=None, case_id_field: str | None = 
 
         if kind in (INCORRECT, PARTIAL):
             failure_cases.append({"idx": idx, "case_id": base["case_id"], "image": image,
+                                  "prompt": base["prompt"],
                                   "verdict": base["verdict"], "model_prediction": pred,
                                   "correct_label": corrected, "rationale": base["rationale"]})
         if cm_present:
             critical_misses.append({"idx": idx, "case_id": base["case_id"], "image": image,
+                                    "prompt": base["prompt"],
                                     "model_prediction": pred,
                                     "correct_label": corrected if kind != CORRECT else pred,
                                     "finding": finding, "rationale": base["rationale"]})

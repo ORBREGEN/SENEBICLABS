@@ -223,7 +223,7 @@ type Report = {
   accuracy: { correct: number; assessable: number; value: number | null }
   per_class: Record<string, { support: number; precision: number | null; recall: number | null }>
   confusion_matrix: { labels: string[]; matrix: number[][] }
-  critical_misses: { case_id: string | null; idx: number; model_prediction: string; correct_label: string | null }[]
+  critical_misses: { case_id: string | null; idx: number; prompt?: string | null; model_prediction: string; correct_label: string | null; finding?: string | null; rationale?: string | null }[]
 }
 const pct = (v: number | null | undefined) => (v == null ? 'n/a' : `${Math.round(v * 100)}%`)
 
@@ -302,9 +302,14 @@ function DeliveredResults({ project, token }: { project: Project; token: string 
               <span className="micro" style={{ display: 'block', marginBottom: 8, color: '#b91c1c' }}>Critical misses ({report.critical_misses.length}) — findings the clinician caught, the model didn&rsquo;t</span>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {report.critical_misses.map((c, i) => (
-                  <div key={i} style={{ background: '#fff', border: '1px solid #f0d0d0', borderLeft: '3px solid #b91c1c', borderRadius: 8, padding: '10px 14px', fontSize: 14 }}>
-                    <span style={{ fontFamily: 'monospace', fontSize: 12, color: '#666' }}>{c.case_id || `#${c.idx}`}</span>
-                    {' — model said '}<strong>{c.model_prediction}</strong>{', clinician read '}<strong>{c.correct_label}</strong>
+                  <div key={i} style={{ background: '#fff', border: '1px solid #f0d0d0', borderLeft: '3px solid #b91c1c', borderRadius: 8, padding: '12px 14px', fontSize: 14 }}>
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+                      <span style={{ fontFamily: 'monospace', fontSize: 12, color: '#666' }}>{c.case_id || `#${c.idx}`}</span>
+                      {c.finding && <span style={{ fontSize: 12, fontWeight: 600, color: '#b91c1c' }}>{c.finding}</span>}
+                    </div>
+                    {c.prompt && <p style={{ margin: '7px 0 9px', color: '#111', lineHeight: 1.5 }}>&ldquo;{c.prompt}&rdquo;</p>}
+                    <div style={{ color: '#3a4655' }}>Model said <strong style={{ color: '#b91c1c' }}>{c.model_prediction}</strong>{' → clinician read '}<strong style={{ color: '#111' }}>{c.correct_label}</strong></div>
+                    {c.rationale && <p style={{ margin: '8px 0 0', fontSize: 13, color: '#3a4655', fontStyle: 'italic', lineHeight: 1.5 }}>{c.rationale}</p>}
                   </div>
                 ))}
               </div>

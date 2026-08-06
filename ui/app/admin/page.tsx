@@ -678,10 +678,14 @@ export default function AdminPage() {
                         <span style={{ ...label, color: '#b91c1c' }}>Critical misses ({reportData[s.id].critical_misses.length})</span>
                         {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                         {reportData[s.id].critical_misses.map((c: any, i: number) => (
-                          <div key={i} style={{ fontSize: 13, marginTop: 6, lineHeight: 1.5 }}>
-                            <code style={{ fontFamily: 'Geist Mono, monospace', color: '#334155' }}>{c.case_id || `#${c.idx}`}</code>
-                            {' — model said '}<strong>{c.model_prediction ?? '—'}</strong>
-                            {', clinician read '}<strong>{c.correct_label ?? '—'}</strong>
+                          <div key={i} style={{ fontSize: 13, marginTop: 8, lineHeight: 1.5, paddingTop: 8, borderTop: i ? '1px solid #eef0f2' : 'none' }}>
+                            <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between', flexWrap: 'wrap' }}>
+                              <code style={{ fontFamily: 'Geist Mono, monospace', color: '#334155' }}>{c.case_id || `#${c.idx}`}</code>
+                              {c.finding && <span style={{ color: '#b91c1c', fontWeight: 600, fontSize: 12 }}>{c.finding}</span>}
+                            </div>
+                            {c.prompt && <p style={{ margin: '5px 0 6px', color: '#0f172a' }}>&ldquo;{c.prompt}&rdquo;</p>}
+                            <span>model said <strong>{c.model_prediction ?? '—'}</strong>{' → clinician read '}<strong>{c.correct_label ?? '—'}</strong></span>
+                            {c.rationale && <p style={{ margin: '5px 0 0', color: '#64748b', fontStyle: 'italic' }}>{c.rationale}</p>}
                           </div>
                         ))}
                       </div>
