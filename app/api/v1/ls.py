@@ -7,6 +7,8 @@ POST /ls/webhook  — (Label Studio) receives annotations and writes them back t
 
 import logging
 
+import httpx
+
 from fastapi import APIRouter, HTTPException, Header, Request
 from pydantic import BaseModel
 
@@ -105,19 +107,45 @@ def ls_sync(body: SyncIn, x_admin_key: str | None = Header(default=None)):
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=f"Invalid eval_config: {exc}")
 
+    # Pull the pending items first so we can check them against the config BEFORE
+    # touching Label Studio — a mismatch here gives the operator a plain instruction
+    # instead of a raw 400 from the import endpoint.
+    items = (
+        db.table("project_items").select("id,content")
+        .eq("project_id", body.project_id).eq("status", "pending").execute()
+    )
+    rows = items.data or []
+    if not rows:
+        raise HTTPException(status_code=422, detail="No pending items to send. Add items to this project first.")
+
+    for k in ls.required_data_keys(eval_config):
+        n_missing = sum(1 for r in rows if not (r.get("content") or {}).get(k))
+        if n_missing:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"This project is set up for images, but {n_missing} of {len(rows)} item(s) "
+                    f"have no '{k}'. Each item needs a viewable image URL under '{k}' — upload the "
+                    f"images through the client portal, or switch the config to a text task."
+                ),
+            )
+
     try:
         if not ls_pid:
             title = f"{s.get('company') or 'Senebiclabs project'} — {body.task_type}"
             ls_pid = ls.create_project(title=title, label_config=label_config)
             db.table("project_submissions").update({"ls_project_id": ls_pid}).eq("id", body.project_id).execute()
-        items = (
-            db.table("project_items").select("id,content")
-            .eq("project_id", body.project_id).eq("status", "pending").execute()
-        )
-        pushed = ls.push_tasks(ls_pid, items.data or [])
+        else:
+            # Keep the live LS project in step with the current config, so edits made
+            # in "Set config" after the first sync are actually applied.
+            ls.update_project_config(ls_pid, label_config)
+        pushed = ls.push_tasks(ls_pid, rows)
+    except httpx.HTTPStatusError as exc:
+        logger.error("LS sync failed: %s", exc)
+        raise HTTPException(status_code=502, detail=ls.explain_ls_error(exc))
     except Exception as exc:
         logger.error("LS sync failed: %s", exc)
-        raise HTTPException(status_code=502, detail="Could not sync to Label Studio. Check LS_URL / LS_TOKEN and that Label Studio is reachable.")
+        raise HTTPException(status_code=502, detail="Could not reach Label Studio. Check that it is running and LS_URL / LS_TOKEN are set.")
 
     return {"ok": True, "ls_project_id": ls_pid, "pushed": pushed}
 

@@ -560,23 +560,101 @@ def build_label_config(eval_config: dict) -> str:
     if not fields:
         raise ValueError("eval_config.schema.fields is empty")
 
-    title = _esc(eval_config.get("title", "Classification review"))
-    subtitle = _esc(eval_config.get("subtitle", "Review the image and complete each field."))
+    # What the clinician reviews: an image (X-ray, scan) or text (prompt + model
+    # output). The field controls all attach toName="image", so whichever mode we
+    # pick MUST emit exactly one object tag named "image" for them to bind to.
+    input_type = str(schema.get("input") or eval_config.get("input") or "image").lower()
+
+    title = _esc(eval_config.get("title", "Review"))
+    default_sub = (
+        "Review the response and complete each field." if input_type == "text"
+        else "Review the image and complete each field."
+    )
+    subtitle = _esc(eval_config.get("subtitle", default_sub))
     header = (
         f'<View style="{_HEAD}"><Header value="{title}" style="{_TITLE}"/>'
         f'<Header value="{subtitle}" style="{_SUB}"/></View>'
     )
-    # Image renderer = Label Studio <Image> ("ls_image"); Slice #6 makes this pluggable.
-    image = (
-        f'<View style="{_CARD_HI}"><Image name="image" value="$image" '
-        f'zoom="true" zoomControl="true" rotateControl="true" width="100%"/></View>'
-    )
-    prediction = (
-        f'<View style="{_CARD}"><Header value="Model prediction" style="{_CAPS}"/>'
-        f'<Text name="prediction" value="$prediction" style="{_BODY}"/></View>'
-    )
+
+    if input_type == "text":
+        # Text review: show each context key (default prompt + model output) as a
+        # read-only block. The primary block is the "image"-named anchor the controls
+        # bind to (a Text object tag works; LS doesn't require the name to be literal).
+        context = schema.get("context") or [
+            {"key": "prompt", "label": "Prompt"},
+            {"key": "output", "label": "Model output"},
+        ]
+        if not context:
+            raise ValueError("text config needs schema.context (which data keys to show)")
+        blocks, n = [], len(context)
+        for i, c in enumerate(context):
+            ckey = c.get("key")
+            if not ckey:
+                raise ValueError("each schema.context entry needs a 'key'")
+            lbl = _esc(c.get("label") or ckey)
+            anchor = "image" if i == n - 1 else f"ctx_{i}"
+            style = _CARD_HI if i == n - 1 else _CARD
+            blocks.append(
+                f'<View style="{style}"><Header value="{lbl}" style="{_CAPS}"/>'
+                f'<Text name="{anchor}" value="${_esc(ckey)}" style="{_BODY}"/></View>'
+            )
+        media = "".join(blocks)
+    else:
+        # Image renderer = Label Studio <Image> ("ls_image"); Slice #6 makes this pluggable.
+        media = (
+            f'<View style="{_CARD_HI}"><Image name="image" value="$image" '
+            f'zoom="true" zoomControl="true" rotateControl="true" width="100%"/></View>'
+            f'<View style="{_CARD}"><Header value="Model prediction" style="{_CAPS}"/>'
+            f'<Text name="prediction" value="$prediction" style="{_BODY}"/></View>'
+        )
     body = "".join(_field_block(n, d, classes, fields) for n, d in fields.items())
-    return f'<View style="{_WRAP}">{header}{image}{prediction}{body}</View>'
+    return f'<View style="{_WRAP}">{header}{media}{body}</View>'
+
+
+def required_data_keys(eval_config: dict | None) -> list[str]:
+    """Data keys every task MUST carry for this config to import into Label Studio.
+
+    LS rejects a task when a media object tag (<Image>) has no value, but renders an
+    empty <Text> without complaint. So the only hard requirement is the image key for
+    image configs; text configs impose none.
+    """
+    if not eval_config:
+        return []
+    schema = eval_config.get("schema") or {}
+    input_type = str(schema.get("input") or eval_config.get("input") or "image").lower()
+    return [] if input_type == "text" else ["image"]
+
+
+def update_project_config(ls_project_id: int, label_config: str) -> None:
+    """Keep an existing LS project's labeling config in step with the current
+    eval_config, so edits made after the first sync actually take effect."""
+    r = httpx.patch(
+        f"{_base()}/api/projects/{ls_project_id}/",
+        headers=_headers(),
+        json={"label_config": label_config},
+        timeout=30,
+    )
+    r.raise_for_status()
+
+
+def explain_ls_error(exc: "httpx.HTTPStatusError") -> str:
+    """Turn a Label Studio HTTP error into a human sentence instead of a generic
+    'check LS_URL/LS_TOKEN' that sends the operator hunting the wrong thing."""
+    try:
+        data = exc.response.json()
+    except Exception:
+        return f"Label Studio returned {exc.response.status_code}."
+    if isinstance(data, dict):
+        ve = data.get("validation_errors")
+        if isinstance(ve, dict):
+            msgs: list[str] = []
+            for v in ve.values():
+                msgs.extend(v if isinstance(v, list) else [v])
+            if msgs:
+                return "Label Studio rejected the request: " + "; ".join(str(m) for m in msgs)
+        if data.get("detail"):
+            return f"Label Studio: {data['detail']}"
+    return f"Label Studio returned {exc.response.status_code}."
 
 
 def is_configured() -> bool:

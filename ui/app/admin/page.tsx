@@ -366,9 +366,10 @@ export default function AdminPage() {
     }
   }
 
-  const CONFIG_TEMPLATE = JSON.stringify({
+  const IMAGE_TEMPLATE = JSON.stringify({
     title: 'Chest X-ray classification review',
     schema: {
+      input: 'image',
       classes: ['Normal', 'Pneumonia', 'Effusion'],
       multi_label: false,
       case_id_field: 'study_id',
@@ -380,10 +381,27 @@ export default function AdminPage() {
     },
   }, null, 2)
 
+  const TEXT_TEMPLATE = JSON.stringify({
+    title: 'Response review',
+    schema: {
+      input: 'text',
+      context: [
+        { key: 'prompt', label: 'Prompt' },
+        { key: 'output', label: 'Model output' },
+      ],
+      classes: ['Correct', 'Incorrect', 'Partially correct'],
+      fields: {
+        verdict: { type: 'single', options: ['Correct', 'Incorrect', 'Partially correct'], required: true },
+        quality: { type: 'scale', max: 5 },
+        notes: { type: 'text', placeholder: 'Rationale (optional)' },
+      },
+    },
+  }, null, 2)
+
   const toggleConfig = (id: string) => {
     const opening = cfgOpen !== id
     setCfgOpen(opening ? id : null)
-    if (opening && cfgText[id] === undefined) setCfgText(t => ({ ...t, [id]: CONFIG_TEMPLATE }))
+    if (opening && cfgText[id] === undefined) setCfgText(t => ({ ...t, [id]: IMAGE_TEMPLATE }))
   }
 
   const saveConfig = async (id: string) => {
@@ -622,7 +640,7 @@ export default function AdminPage() {
             {cfgOpen === s.id && (
               <div style={{ marginTop: 16, padding: 16, border: '1px solid #eef0f2', borderRadius: 10, background: '#fafbfc' }}>
                 <p style={{ ...label, marginBottom: 4 }}>Task config</p>
-                <p style={{ fontSize: 12.5, color: '#475569', marginBottom: 10 }}>Edit the <code style={{ fontFamily: 'Geist Mono, monospace' }}>classes</code> to match the client&apos;s labels. This defines the labelling task and how the report is scored.</p>
+                <p style={{ fontSize: 12.5, color: '#475569', marginBottom: 10 }}>Pick a template: <strong>Image</strong> for X-rays/scans (each item needs an image), <strong>Text</strong> for rating a model&apos;s written answers. Then edit the <code style={{ fontFamily: 'Geist Mono, monospace' }}>classes</code> to match the client&apos;s labels.</p>
                 <textarea
                   value={cfgText[s.id] ?? ''}
                   onChange={e => setCfgText(t => ({ ...t, [s.id]: e.target.value }))}
@@ -631,7 +649,8 @@ export default function AdminPage() {
                 />
                 <div style={{ display: 'flex', gap: 14, alignItems: 'center', marginTop: 12, flexWrap: 'wrap' }}>
                   <button style={btn} onClick={() => saveConfig(s.id)} disabled={cfgSaving === s.id}>{cfgSaving === s.id ? 'Saving…' : 'Save config'}</button>
-                  <button onClick={() => setCfgText(t => ({ ...t, [s.id]: CONFIG_TEMPLATE }))} style={{ ...label, background: 'none', border: 'none', cursor: 'pointer' }}>Reset to template</button>
+                  <button onClick={() => setCfgText(t => ({ ...t, [s.id]: IMAGE_TEMPLATE }))} style={{ ...label, background: 'none', border: 'none', cursor: 'pointer' }}>Image template</button>
+                  <button onClick={() => setCfgText(t => ({ ...t, [s.id]: TEXT_TEMPLATE }))} style={{ ...label, background: 'none', border: 'none', cursor: 'pointer' }}>Text template</button>
                   {cfgMsg[s.id] && <span style={{ ...label, color: cfgMsg[s.id].includes('✓') ? '#15a34a' : '#dc2626' }}>{cfgMsg[s.id]}</span>}
                 </div>
               </div>
