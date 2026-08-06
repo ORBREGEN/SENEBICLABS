@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback } from 'react'
 import NavBar from '../components/NavBar'
 import FooterSection from '../components/sections/FooterSection'
 import Toast from '../components/ui/Toast'
-import { parseDataset, type ParsedDataset } from '../lib/dataset'
+import { parseDataset } from '../lib/dataset'
 
 const dropzone: React.CSSProperties = {
   display: 'block', border: '1px dashed var(--hairline-strong)', borderRadius: 12,
@@ -38,44 +38,98 @@ const CheckMark = (
 )
 
 function DataUpload({ project, token, onUploaded }: { project: Project; token: string; onUploaded: () => void }) {
-  const [parsed, setParsed] = useState<(ParsedDataset & { filename: string }) | null>(null)
+  const [rows, setRows] = useState<Record<string, string>[] | null>(null)
+  const [columns, setColumns] = useState<string[]>([])
+  const [manifestName, setManifestName] = useState('')
+  const [images, setImages] = useState<Record<string, File>>({})
   const [err, setErr] = useState('')
   const [uploading, setUploading] = useState(false)
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
   const [msg, setMsg] = useState('')
 
-  const onFile = async (file: File) => {
+  const fname = (r: Record<string, string>) => r.filename || r.image || r.file || ''
+  const imageCount = Object.keys(images).length
+  const matched = rows ? rows.filter(r => images[fname(r)]).length : 0
+  // If the manifest names files but no images are attached yet, it's an image task
+  // waiting for its images.
+  const looksLikeImages = columns.some(c => ['filename', 'image', 'file'].includes(c))
+
+  const addImages = (list: FileList) => {
+    const map: Record<string, File> = { ...images }
+    Array.from(list).forEach(f => { if (f.type.startsWith('image/')) map[f.name] = f })
+    setImages(map)
+  }
+
+  const onFiles = async (list: FileList) => {
     setErr(''); setMsg('')
-    try {
-      const text = await file.text()
-      const { items, columns } = parseDataset(file.name, text)
-      if (!items.length) throw new Error('No rows found in that file.')
-      setParsed({ items, columns, filename: file.name })
-    } catch (e: unknown) {
-      setParsed(null)
-      setErr(e instanceof Error ? e.message : 'Could not read that file.')
+    const arr = Array.from(list)
+    const manifest = arr.find(f => /\.(csv|json)$/i.test(f.name) || f.type === 'text/csv' || f.type === 'application/json')
+    const imgs = arr.filter(f => f.type.startsWith('image/'))
+    if (imgs.length) {
+      const map: Record<string, File> = { ...images }
+      imgs.forEach(f => { map[f.name] = f })
+      setImages(map)
+    }
+    if (manifest) {
+      try {
+        const text = await manifest.text()
+        const { items, columns } = parseDataset(manifest.name, text)
+        if (!items.length) throw new Error('No rows found in that file.')
+        setRows(items as Record<string, string>[]); setColumns(columns); setManifestName(manifest.name)
+      } catch (e: unknown) {
+        setErr(e instanceof Error ? e.message : 'Could not read that file.')
+      }
+    } else if (!imgs.length) {
+      setErr('Drop a CSV or JSON file (and, for image tasks, the image files too).')
     }
   }
 
+  const reset = () => { setRows(null); setColumns([]); setManifestName(''); setImages({}); setProgress(null) }
+
   const upload = async () => {
-    if (!parsed) return
-    setUploading(true); setErr('')
+    if (!rows) return
+    setUploading(true); setErr(''); setMsg('')
     try {
-      const res = await fetch('/api/portal/items', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, project_id: project.id, items: parsed.items }),
-      })
-      const data = await res.json()
-      if (!data.ok) throw new Error(data.message ?? 'Upload failed.')
-      setMsg(data.message)
-      setParsed(null)
-      onUploaded()
+      if (imageCount > 0) {
+        // Image task: send one row at a time, each image matched to its row by filename.
+        setProgress({ done: 0, total: rows.length })
+        for (let i = 0; i < rows.length; i++) {
+          const r = rows[i]; const f = images[fname(r)]
+          if (!f) throw new Error(`No image file matching row ${i + 1} ("${fname(r)}"). Add it and re-upload.`)
+          const fd = new FormData()
+          fd.append('token', token); fd.append('project_id', project.id); fd.append('idx', String(i))
+          fd.append('prediction', r.prediction ?? ''); fd.append('study_id', r.study_id ?? '')
+          fd.append('file', f)
+          const res = await fetch('/api/portal/upload-image', { method: 'POST', body: fd })
+          const data = await res.json()
+          if (!data.ok) throw new Error(data.message ?? `Failed at row ${i + 1}`)
+          setProgress({ done: i + 1, total: rows.length })
+        }
+        setMsg(`Uploaded ${rows.length} cases.`)
+      } else {
+        // Text task: one bulk request, each row becomes a task.
+        const res = await fetch('/api/portal/items', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token, project_id: project.id, items: rows }),
+        })
+        const data = await res.json()
+        if (!data.ok) throw new Error(data.message ?? 'Upload failed.')
+        setMsg(data.message)
+      }
+      reset(); onUploaded()
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Upload failed.')
     } finally {
-      setUploading(false)
+      setUploading(false); setProgress(null)
     }
   }
+
+  const busy = uploading || !!progress
+  const label = progress ? `Uploading ${progress.done}/${progress.total}…`
+    : busy ? 'Uploading…'
+    : imageCount > 0 ? `Upload ${rows?.length ?? 0} cases`
+    : `Upload ${(rows?.length ?? 0).toLocaleString()} tasks`
 
   return (
     <div style={{ marginTop: 28 }}>
@@ -86,122 +140,49 @@ function DataUpload({ project, token, onUploaded }: { project: Project; token: s
         </p>
       ) : (
         <p style={{ fontSize: 14.5, color: 'var(--ink)', lineHeight: 1.6, marginBottom: 14 }}>
-          No data uploaded yet. Upload your dataset and each row becomes one labeling task.
+          Drop your dataset — each row becomes one labeling task. For image tasks (X-rays, scans),
+          drop the image files alongside your CSV and we&apos;ll match them by name.
         </p>
       )}
 
-      {!parsed ? (
+      {!rows ? (
         <label style={dropzone}
           onDragOver={e => e.preventDefault()}
-          onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) onFile(f) }}
+          onDrop={e => { e.preventDefault(); if (e.dataTransfer.files?.length) onFiles(e.dataTransfer.files) }}
         >
-          <input type="file" accept=".csv,.json,text/csv,application/json" style={{ display: 'none' }}
-            onChange={e => { const f = e.target.files?.[0]; if (f) onFile(f); e.target.value = '' }} />
-          <span style={{ color: 'var(--ink)', fontWeight: 500, fontSize: 15 }}>Drop a CSV or JSON file</span>
+          <input type="file" accept=".csv,.json,text/csv,application/json,image/*" multiple style={{ display: 'none' }}
+            onChange={e => { if (e.target.files?.length) onFiles(e.target.files); e.target.value = '' }} />
+          <span style={{ color: 'var(--ink)', fontWeight: 500, fontSize: 15 }}>Drop your CSV or JSON — plus image files if it&apos;s an image task</span>
           <span style={{ display: 'block', marginTop: 6, fontSize: 13, color: 'var(--slate)' }}>or click to browse · each row becomes one task</span>
         </label>
       ) : (
         <div style={{ border: '1px solid var(--hairline-strong)', borderRadius: 12, padding: 18 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 15, fontWeight: 600 }}>{parsed.filename}</span>
-            <span className="micro">{parsed.items.length.toLocaleString()} rows</span>
+            <span style={{ fontSize: 15, fontWeight: 600 }}>{manifestName}</span>
+            <span className="micro">
+              {rows.length.toLocaleString()} rows{imageCount > 0 ? ` · ${matched}/${rows.length} matched to images` : ''}
+            </span>
           </div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 12 }}>
-            {parsed.columns.map(c => (
+            {columns.map(c => (
               <span key={c} className="micro" style={{ border: '1px solid var(--hairline-strong)', borderRadius: 999, padding: '4px 10px' }}>{c}</span>
             ))}
           </div>
+          {(imageCount > 0 || looksLikeImages) && (
+            <label style={{ ...dropzone, marginTop: 14 }}>
+              <input type="file" accept="image/*" multiple style={{ display: 'none' }}
+                onChange={e => { if (e.target.files) addImages(e.target.files); e.target.value = '' }} />
+              <span style={{ color: 'var(--ink)', fontWeight: 500, fontSize: 15 }}>
+                {imageCount > 0 ? `${imageCount} image files selected — add more if needed` : 'Add the image files named in your CSV'}
+              </span>
+              <span style={{ display: 'block', marginTop: 6, fontSize: 13, color: 'var(--slate)' }}>each image is stored privately, de-identified</span>
+            </label>
+          )}
           <div style={{ display: 'flex', gap: 14, marginTop: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-            <button className="sf-submit" onClick={upload} disabled={uploading} style={{ padding: '11px 20px', fontSize: 14 }}>
-              {uploading ? 'Uploading…' : `Upload ${parsed.items.length.toLocaleString()} tasks`}
+            <button className="sf-submit" onClick={upload} disabled={busy || (imageCount > 0 && matched === 0)} style={{ padding: '11px 20px', fontSize: 14 }}>
+              {label}
             </button>
-            <button onClick={() => setParsed(null)} className="micro" style={{ background: 'none', border: 'none', cursor: 'pointer' }}>Choose another file</button>
-          </div>
-        </div>
-      )}
-      {err && <p style={{ color: '#dc2626', fontSize: 13, marginTop: 10 }}>{err}</p>}
-      {msg && <p className="micro" style={{ marginTop: 12 }}>{msg}</p>}
-    </div>
-  )
-}
-
-function ImageUpload({ project, token, onUploaded }: { project: Project; token: string; onUploaded: () => void }) {
-  const [rows, setRows] = useState<Record<string, string>[] | null>(null)
-  const [csvName, setCsvName] = useState('')
-  const [files, setFiles] = useState<Record<string, File>>({})
-  const [err, setErr] = useState('')
-  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
-  const [msg, setMsg] = useState('')
-
-  const fname = (r: Record<string, string>) => r.filename || r.image || r.file || ''
-
-  const onCSV = async (file: File) => {
-    setErr(''); setMsg('')
-    try {
-      const text = await file.text()
-      const { items } = parseDataset(file.name, text)
-      if (!items.length) throw new Error('No rows in that CSV.')
-      setRows(items as Record<string, string>[]); setCsvName(file.name)
-    } catch (e: unknown) { setErr(e instanceof Error ? e.message : 'Could not read the CSV.') }
-  }
-  const onImages = (list: FileList) => {
-    const map: Record<string, File> = {}
-    Array.from(list).forEach(f => { map[f.name] = f })
-    setFiles(map)
-  }
-
-  const matched = rows ? rows.filter(r => files[fname(r)]).length : 0
-
-  const upload = async () => {
-    if (!rows) return
-    setErr(''); setMsg(''); setProgress({ done: 0, total: rows.length })
-    for (let i = 0; i < rows.length; i++) {
-      const r = rows[i]; const f = files[fname(r)]
-      if (!f) { setErr(`No image file matching row ${i + 1} ("${fname(r)}"). Add it and re-upload.`); setProgress(null); return }
-      const fd = new FormData()
-      fd.append('token', token); fd.append('project_id', project.id); fd.append('idx', String(i))
-      fd.append('prediction', r.prediction ?? ''); fd.append('study_id', r.study_id ?? '')
-      fd.append('file', f)
-      try {
-        const res = await fetch('/api/portal/upload-image', { method: 'POST', body: fd })
-        const data = await res.json()
-        if (!data.ok) throw new Error(data.message ?? `Failed at row ${i + 1}`)
-      } catch (e: unknown) { setErr(e instanceof Error ? e.message : `Failed at row ${i + 1}`); setProgress(null); return }
-      setProgress({ done: i + 1, total: rows.length })
-    }
-    setMsg(`Uploaded ${rows.length} images.`); setProgress(null); setRows(null); setFiles({}); onUploaded()
-  }
-
-  return (
-    <div style={{ marginTop: 28 }}>
-      <span className="micro" style={{ display: 'block', marginBottom: 10 }}>Upload images + predictions</span>
-      <p style={{ fontSize: 13.5, color: 'var(--slate)', lineHeight: 1.6, marginBottom: 14 }}>
-        Add a predictions CSV (columns <code>filename, prediction, study_id</code>), then select the matching image files. Each image is stored privately, de-identified.
-      </p>
-
-      {!rows ? (
-        <label style={dropzone}>
-          <input type="file" accept=".csv,text/csv" style={{ display: 'none' }}
-            onChange={e => { const f = e.target.files?.[0]; if (f) onCSV(f); e.target.value = '' }} />
-          <span style={{ color: 'var(--ink)', fontWeight: 500, fontSize: 15 }}>Step 1 — choose your predictions CSV</span>
-        </label>
-      ) : (
-        <div style={{ border: '1px solid var(--hairline-strong)', borderRadius: 12, padding: 18 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 15, fontWeight: 600 }}>{csvName}</span>
-            <span className="micro">{rows.length} rows · {matched} matched to images</span>
-          </div>
-          <label style={{ ...dropzone, marginTop: 14 }}>
-            <input type="file" accept="image/*" multiple style={{ display: 'none' }}
-              onChange={e => { if (e.target.files) onImages(e.target.files) }} />
-            <span style={{ color: 'var(--ink)', fontWeight: 500, fontSize: 15 }}>Step 2 — select your image files</span>
-            <span style={{ display: 'block', marginTop: 6, fontSize: 13, color: 'var(--slate)' }}>select all the images named in your CSV</span>
-          </label>
-          <div style={{ display: 'flex', gap: 14, marginTop: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-            <button className="sf-submit" onClick={upload} disabled={!!progress || matched === 0} style={{ padding: '11px 20px', fontSize: 14 }}>
-              {progress ? `Uploading ${progress.done}/${progress.total}…` : `Upload ${rows.length} cases`}
-            </button>
-            <button onClick={() => { setRows(null); setFiles({}) }} className="micro" style={{ background: 'none', border: 'none', cursor: 'pointer' }}>Start over</button>
+            <button onClick={reset} className="micro" style={{ background: 'none', border: 'none', cursor: 'pointer' }}>Start over</button>
           </div>
         </div>
       )}
@@ -353,7 +334,6 @@ function Tracker({ project, token, onUploaded }: { project: Project; token: stri
       {project.task_type && <p className="pt-services">{project.task_type}</p>}
 
       <DataUpload project={project} token={token} onUploaded={onUploaded} />
-      <ImageUpload project={project} token={token} onUploaded={onUploaded} />
 
       <div className="pt-status" style={{ marginTop: 28 }}>
         <span className="micro" style={{ display: 'block', marginBottom: 8 }}>Current status</span>

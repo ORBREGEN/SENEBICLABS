@@ -293,6 +293,7 @@ def portal_add_items(body: PortalItemsIn):
         raise HTTPException(status_code=500, detail="Could not upload. Please try again.")
     if not sub.data or sub.data[0].get("email") != email:
         raise HTTPException(status_code=403, detail="That project is not on this account.")
+    _guard_item_keys(db, body.project_id, body.items)
 
     try:
         existing = (
@@ -557,6 +558,31 @@ def _progress(db, project_id: str) -> tuple[int, int]:
     return len(data), sum(1 for r in data if r.get("status") == "done")
 
 
+def _guard_item_keys(db, project_id: str, items: list[dict]) -> None:
+    """Reject a bulk item add whose rows lack a key the project's config needs
+    (e.g. a plain CSV added to an image task), with the exact next step — before any
+    broken items are created. No-op when the config imposes no required keys."""
+    from app.services import labelstudio as ls
+    try:
+        sub = db.table("project_submissions").select("eval_config").eq("id", project_id).limit(1).execute()
+        eval_config = sub.data[0].get("eval_config") if sub.data else None
+    except Exception:
+        eval_config = None
+    for k in ls.required_data_keys(eval_config):
+        n_missing = sum(1 for c in items if not (c or {}).get(k))
+        if n_missing:
+            hint = (
+                " Images are added by dropping the image files alongside your CSV — a plain "
+                "CSV can't carry them."
+                if k == "image"
+                else f" Add a '{k}' column to your file, or pick a config that matches it."
+            )
+            raise HTTPException(
+                status_code=422,
+                detail=f"{n_missing} of {len(items)} row(s) have no '{k}', which this task needs.{hint}",
+            )
+
+
 @router.post("/admin/items", response_model=SubmissionResponse, summary="Add work items to a project (admin)")
 def admin_add_items(body: ItemsIn, x_admin_key: str | None = Header(default=None)):
     _require_admin(x_admin_key)
@@ -565,6 +591,8 @@ def admin_add_items(body: ItemsIn, x_admin_key: str | None = Header(default=None
         raise HTTPException(status_code=503, detail="Database unavailable.")
     if not body.items:
         return SubmissionResponse(ok=True, message="No items to add.")
+    _guard_item_keys(db, body.project_id, body.items)
+
     try:
         existing = (
             db.table("project_items").select("idx").eq("project_id", body.project_id)
