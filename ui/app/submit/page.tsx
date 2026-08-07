@@ -140,8 +140,15 @@ export default function SubmitPage() {
                     <polyline points="6 10.5 9 13.5 14 7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                   <div>
-                    <h4>Request received.</h4>
-                    <p>Thanks, {form.firstName || 'there'}. We&rsquo;ll be in touch within one business day to set up your demo. Watch your inbox for a confirmation.</p>
+                    <h4>Got it{form.firstName ? `, ${form.firstName}` : ''}.</h4>
+                    <p>Last step — pick a time and we&rsquo;ll walk you through it live.</p>
+                    <a
+                      className="sf-submit"
+                      style={{ display: 'inline-block', width: 'auto', marginTop: 18, padding: '14px 24px', textDecoration: 'none' }}
+                      href={`https://calendly.com/senebiclabs/30min?name=${encodeURIComponent(`${form.firstName} ${form.lastName}`.trim())}&email=${encodeURIComponent(form.email)}`}
+                    >
+                      Choose a time →
+                    </a>
                   </div>
                 </div>
               ) : (

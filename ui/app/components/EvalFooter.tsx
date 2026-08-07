@@ -12,7 +12,7 @@ export default function EvalFooter() {
         <p style={{ fontFamily: BODY, fontWeight: 300, fontSize: 14, color: 'var(--slate)', lineHeight: 1.6, maxWidth: 420, margin: '0 auto 24px' }}>
           Clinician-validated safety and accuracy evaluation for medical AI.
         </p>
-        <a href="https://calendly.com/senebiclabs/30min" target="_blank" rel="noopener noreferrer" className="iso-cta">Book a demo →</a>
+        <a href="/submit" className="iso-cta">Book a demo →</a>
         <div style={{ display: 'flex', gap: 24, justifyContent: 'center', flexWrap: 'wrap', marginTop: 36 }}>
           <a href="/evaluate/privacy" className="iso-cta iso-cta--muted">Privacy</a>
           <a href="/evaluate/terms" className="iso-cta iso-cta--muted">Terms</a>
