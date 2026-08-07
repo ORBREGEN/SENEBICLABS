@@ -17,16 +17,16 @@ const TASK_TYPES = [
 
 const POINTS = [
   {
-    heading: 'We review and scope',
-    body: 'We come back within one business day with a short call to scope a small pilot, before you commit to anything larger.',
+    heading: 'A short intro call',
+    body: 'We reply within one business day to set up a quick walkthrough of the platform on your use case.',
   },
   {
-    heading: 'Specialists do the work',
-    body: 'Credentialed medical specialists label your data on our platform, with gold-standard checks and agreement built into every task.',
+    heading: 'See it on your data',
+    body: 'We show how credentialed medical specialists label and evaluate your data, with gold-standard checks and agreement built into every task.',
   },
   {
-    heading: 'You get data you can trust',
-    body: 'We deliver labeled data with quality metrics attached, ready to train or evaluate your models.',
+    heading: 'Scope a first pilot',
+    body: 'If it is a fit, we scope a small pilot so you see the quality before committing to anything larger.',
   },
 ]
 
@@ -103,12 +103,12 @@ export default function SubmitPage() {
                 textWrap: 'balance',
                 marginBottom: 24,
               }}>
-                Let&rsquo;s build your dataset.
+                Book a demo.
               </h1>
               <p style={{ fontSize: 18, color: 'var(--ink)', lineHeight: 1.75, maxWidth: 480, marginBottom: 44 }}>
-                Tell us what you need annotated. We match it to credentialed medical
-                specialists, run it through quality control, and deliver labeled data
-                ready for your models. Every project starts with a small pilot.
+                See clinician-verified evaluation and labeling on your own models.
+                Tell us a bit about what you&rsquo;re building and we&rsquo;ll set up a
+                walkthrough with our team.
               </p>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 26, maxWidth: 460 }}>
@@ -126,7 +126,7 @@ export default function SubmitPage() {
 
             {/* Right — form */}
             <div className="submit-form-col">
-              <span className="micro" style={{ display: 'block', color: 'var(--slate)', marginBottom: 18 }}>Project details</span>
+              <span className="micro" style={{ display: 'block', color: 'var(--slate)', marginBottom: 18 }}>Tell us about your use case</span>
 
               {done ? (
                 <div className="sf-success">
@@ -135,8 +135,8 @@ export default function SubmitPage() {
                     <polyline points="6 10.5 9 13.5 14 7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                   <div>
-                    <h4>Project received.</h4>
-                    <p>Thanks, {form.name.split(' ')[0] || 'there'}. We will be in touch within one business day to scope your pilot. Watch your inbox for a confirmation.</p>
+                    <h4>Request received.</h4>
+                    <p>Thanks, {form.name.split(' ')[0] || 'there'}. We&rsquo;ll be in touch within one business day to set up your demo. Watch your inbox for a confirmation.</p>
                   </div>
                 </div>
               ) : (
@@ -170,8 +170,8 @@ export default function SubmitPage() {
                   </div>
 
                   <div className="sf-field">
-                    <label className="sf-label" htmlFor="description">Describe your project in detail *</label>
-                    <p className="sf-help">Include the type of data, roughly how many items, your timeline, and any budget. The more detail, the faster we can scope it.</p>
+                    <label className="sf-label" htmlFor="description">What are you working on? *</label>
+                    <p className="sf-help">A line on your model and what you&rsquo;d want reviewed, labeled, or evaluated — so we can tailor the demo to your use case.</p>
                     <textarea id="description" className="sf-textarea" value={form.description} onChange={set('description')} required disabled={loading} rows={6} />
                   </div>
 
@@ -181,9 +181,9 @@ export default function SubmitPage() {
                   </div>
 
                   <button className="sf-submit" type="submit" disabled={loading}>
-                    {loading ? 'Submitting…' : 'Submit project'}
+                    {loading ? 'Submitting…' : 'Book a demo'}
                   </button>
-                  <p className="sf-note">We reply within one business day. Your details stay private.</p>
+                  <p className="sf-note">We&rsquo;ll reply within one business day to set up your demo. Your details stay private.</p>
                 </form>
               )}
 
