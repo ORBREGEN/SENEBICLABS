@@ -31,8 +31,8 @@ const POINTS = [
 ]
 
 type Form = {
-  name: string; email: string; company: string; description: string
-  task_type: string[]; sample_link: string
+  firstName: string; lastName: string; email: string; company: string
+  jobTitle: string; description: string; task_type: string[]
 }
 
 const check = (
@@ -44,14 +44,14 @@ const check = (
 
 export default function SubmitPage() {
   const [form, setForm] = useState<Form>({
-    name: '', email: '', company: '', description: '',
-    task_type: [], sample_link: '',
+    firstName: '', lastName: '', email: '', company: '',
+    jobTitle: '', description: '', task_type: [],
   })
   const [loading, setLoading] = useState(false)
   const [done, setDone] = useState(false)
   const [error, setError] = useState('')
 
-  const set = (k: 'name' | 'email' | 'company' | 'description' | 'sample_link') =>
+  const set = (k: 'firstName' | 'lastName' | 'email' | 'company' | 'jobTitle' | 'description') =>
     (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
       setForm({ ...form, [k]: e.target.value })
 
@@ -64,11 +64,16 @@ export default function SubmitPage() {
     setLoading(true)
     setError('')
     try {
+      const name = `${form.firstName} ${form.lastName}`.trim()
+      const description = form.jobTitle ? `Role: ${form.jobTitle}\n\n${form.description}` : form.description
       const res = await fetch('/api/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ...form,
+          name,
+          email: form.email,
+          company: form.company,
+          description,
           task_type: form.task_type.join(', '),
         }),
       })
@@ -136,29 +141,40 @@ export default function SubmitPage() {
                   </svg>
                   <div>
                     <h4>Request received.</h4>
-                    <p>Thanks, {form.name.split(' ')[0] || 'there'}. We&rsquo;ll be in touch within one business day to set up your demo. Watch your inbox for a confirmation.</p>
+                    <p>Thanks, {form.firstName || 'there'}. We&rsquo;ll be in touch within one business day to set up your demo. Watch your inbox for a confirmation.</p>
                   </div>
                 </div>
               ) : (
                 <form onSubmit={submit} className="sf-form">
                   <div className="sf-row">
                     <div className="sf-field">
-                      <label className="sf-label" htmlFor="name">Your name *</label>
-                      <input id="name" className="sf-input" value={form.name} onChange={set('name')} required disabled={loading} autoComplete="name" />
+                      <label className="sf-label" htmlFor="firstName">First name *</label>
+                      <input id="firstName" className="sf-input" value={form.firstName} onChange={set('firstName')} required disabled={loading} autoComplete="given-name" />
                     </div>
                     <div className="sf-field">
-                      <label className="sf-label" htmlFor="email">Work email *</label>
-                      <input id="email" className="sf-input" type="email" value={form.email} onChange={set('email')} required disabled={loading} autoComplete="email" />
+                      <label className="sf-label" htmlFor="lastName">Last name *</label>
+                      <input id="lastName" className="sf-input" value={form.lastName} onChange={set('lastName')} required disabled={loading} autoComplete="family-name" />
                     </div>
                   </div>
 
                   <div className="sf-field">
-                    <label className="sf-label" htmlFor="company">Company *</label>
-                    <input id="company" className="sf-input" value={form.company} onChange={set('company')} required disabled={loading} autoComplete="organization" />
+                    <label className="sf-label" htmlFor="email">Work email *</label>
+                    <input id="email" className="sf-input" type="email" value={form.email} onChange={set('email')} required disabled={loading} autoComplete="email" />
+                  </div>
+
+                  <div className="sf-row">
+                    <div className="sf-field">
+                      <label className="sf-label" htmlFor="company">Company *</label>
+                      <input id="company" className="sf-input" value={form.company} onChange={set('company')} required disabled={loading} autoComplete="organization" />
+                    </div>
+                    <div className="sf-field">
+                      <label className="sf-label" htmlFor="jobTitle">Job title *</label>
+                      <input id="jobTitle" className="sf-input" value={form.jobTitle} onChange={set('jobTitle')} required disabled={loading} autoComplete="organization-title" />
+                    </div>
                   </div>
 
                   <div className="sf-field">
-                    <label className="sf-label">What can we help with? <span className="opt">Select all that apply</span></label>
+                    <label className="sf-label">What are you interested in? <span className="opt">Select all that apply</span></label>
                     <div className="sf-checks">
                       {TASK_TYPES.map(o => (
                         <label key={o} className="sf-check">
@@ -170,14 +186,9 @@ export default function SubmitPage() {
                   </div>
 
                   <div className="sf-field">
-                    <label className="sf-label" htmlFor="description">What are you working on? *</label>
+                    <label className="sf-label" htmlFor="description">How can we help? *</label>
                     <p className="sf-help">A line on your model and what you&rsquo;d want reviewed, labeled, or evaluated — so we can tailor the demo to your use case.</p>
-                    <textarea id="description" className="sf-textarea" value={form.description} onChange={set('description')} required disabled={loading} rows={6} />
-                  </div>
-
-                  <div className="sf-field">
-                    <label className="sf-label" htmlFor="sample_link">Sample data or guidelines <span className="opt">Optional</span></label>
-                    <input id="sample_link" className="sf-input" value={form.sample_link} onChange={set('sample_link')} disabled={loading} />
+                    <textarea id="description" className="sf-textarea" value={form.description} onChange={set('description')} required disabled={loading} rows={5} />
                   </div>
 
                   <button className="sf-submit" type="submit" disabled={loading}>
