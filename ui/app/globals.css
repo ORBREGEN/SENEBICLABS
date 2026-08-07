@@ -2116,6 +2116,12 @@ nav.top.nav-on-light {
 .submit-light .nav-join-cta { background: #0d0d0d; color: #FFFFFF; }
 .submit-light .nav-join-cta:hover { opacity: 0.85; }
 
+/* /submit uses the dark site theme, constant with the rest of the funnel */
+.submit-page { background: var(--navy); color: var(--ink); min-height: 100vh; }
+.submit-page .sf-input:hover, .submit-page .sf-textarea:hover { border-color: rgba(255,255,255,0.34); }
+.submit-page .sf-input:focus, .submit-page .sf-textarea:focus { box-shadow: 0 0 0 3px rgba(255,255,255,0.10); background: rgba(255,255,255,0.02); }
+.submit-page .sf-success { background: rgba(255,255,255,0.03); }
+
 .submit-section { padding: clamp(110px, 13vw, 160px) 0 120px; }
 
 .submit-split {

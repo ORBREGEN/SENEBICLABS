@@ -89,8 +89,8 @@ export default function SubmitPage() {
 
   return (
     <>
-      <div className="submit-light">
-      <NavBar minimal onLight />
+      <div className="submit-page">
+      <NavBar minimal />
 
       <section className="submit-section">
         <div className="wrap">
