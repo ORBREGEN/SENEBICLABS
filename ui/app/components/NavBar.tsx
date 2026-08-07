@@ -20,8 +20,10 @@ export default function NavBar({ active, onLight, minimal }: { active?: Page; on
 
   const links = minimal ? [] : LINKS
   const brandHref = minimal ? '/evaluate' : '/'
-  const ctaHref = minimal ? '/submit' : '/experts'
+  const ctaHref = minimal ? 'https://calendly.com/senebiclabs/30min' : '/experts'
   const ctaLabel = minimal ? 'Book a demo →' : 'Join as specialist →'
+  // The demo CTA is an external scheduler; open it in a new tab.
+  const ctaExternal = minimal ? { target: '_blank', rel: 'noopener noreferrer' } : {}
 
   return (
     <nav className={`top scrolled${open ? ' nav-open' : ''}${onLight ? ' nav-on-light' : ''}`}>
@@ -45,7 +47,7 @@ export default function NavBar({ active, onLight, minimal }: { active?: Page; on
 
         {/* Right side: CTA, plus hamburger only when there are links */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, gridColumn: 3 }}>
-          <a href={ctaHref} className={minimal ? 'nav-join-cta' : 'nav-join-cta nav-cta-desktop'}>{ctaLabel}</a>
+          <a href={ctaHref} {...ctaExternal} className={minimal ? 'nav-join-cta' : 'nav-join-cta nav-cta-desktop'}>{ctaLabel}</a>
           {!minimal && (
             <button
               className="nav-hamburger"

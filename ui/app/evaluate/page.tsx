@@ -58,7 +58,7 @@ function Cell({ tag, title, body }: { tag?: string; title: string; body: string;
 function Cta({ center = false }: { center?: boolean }) {
   return (
     <div style={{ display: 'flex', gap: 28, alignItems: 'center', flexWrap: 'wrap', justifyContent: center ? 'center' : 'flex-start' }}>
-      <a href="/submit" className="nav-join-cta">Book a demo →</a>
+      <a href="https://calendly.com/senebiclabs/30min" target="_blank" rel="noopener noreferrer" className="nav-join-cta">Book a demo →</a>
       <a href="mailto:senebiclabs@gmail.com" className="iso-cta iso-cta--muted" style={{ textTransform: 'none', fontSize: 13, letterSpacing: '0.03em' }}>
         or just email us →
       </a>
