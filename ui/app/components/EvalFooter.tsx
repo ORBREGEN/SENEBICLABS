@@ -9,8 +9,8 @@ export default function EvalFooter() {
         <div style={{ fontFamily: DISPLAY, fontWeight: 300, fontSize: 19, letterSpacing: '0.04em', marginBottom: 14 }}>
           Senebiclabs
         </div>
-        <p style={{ fontFamily: BODY, fontWeight: 300, fontSize: 14, color: 'var(--slate)', lineHeight: 1.6, maxWidth: 420, margin: '0 auto 24px' }}>
-          Clinician-validated safety and accuracy evaluation for medical AI.
+        <p style={{ fontFamily: BODY, fontWeight: 300, fontSize: 14, color: 'var(--slate)', lineHeight: 1.6, maxWidth: 460, margin: '0 auto 24px' }}>
+          The clinician-grade data layer for medical AI — labeling, evaluation, and RLHF.
         </p>
         <a href="/submit" className="iso-cta">Book a demo →</a>
         <div style={{ display: 'flex', gap: 24, justifyContent: 'center', flexWrap: 'wrap', marginTop: 36 }}>
