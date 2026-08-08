@@ -1,15 +1,15 @@
 import type { Metadata } from 'next'
 import EvalNav from './components/EvalNav'
-import FooterSection from './components/sections/FooterSection'
+import EvalFooter from './components/EvalFooter'
 
 export const metadata: Metadata = {
   title: 'Medical AI evaluation',
   description:
-    "Licensed clinicians annotate and evaluate medical AI. You get a defensible breakdown of where your model is right, where it fails, and what it critically missed — across radiology, pathology, clinical text, medical LLMs, and more.",
+    "Licensed clinicians evaluate your medical AI's outputs — a defensible breakdown of where your model is right, where it fails, and what it critically missed, across radiology, pathology, clinical text, and medical LLMs.",
   alternates: { canonical: '/' },
   openGraph: {
     title: 'Prove your medical AI works · Senebiclabs',
-    description: 'Licensed clinicians annotate and evaluate medical AI, across every modality. A performance breakdown, not just labels.',
+    description: "Licensed clinicians evaluate your medical AI's outputs, across every modality. A performance breakdown you can defend.",
     url: 'https://senebiclabs.com',
   },
 }
@@ -74,7 +74,7 @@ export default function EvaluatePage() {
       {/* ── HERO ───────────────────────────────────────────────────────── */}
       <section style={{ padding: 'clamp(164px, 20vw, 240px) 0 clamp(96px, 12vw, 136px)' }}>
         <div className="wrap" style={{ textAlign: 'center' }}>
-          <span className="iso-label" style={eyebrow(36)}>Medical AI annotation &amp; evaluation</span>
+          <span className="iso-label" style={eyebrow(36)}>Medical AI evaluation</span>
           <h1 style={{ ...T_DISPLAY, maxWidth: 940, margin: '0 auto' }}>
             Prove your medical AI <em style={em}>works</em>.
           </h1>
@@ -138,12 +138,12 @@ export default function EvaluatePage() {
 
           <div className="blocks-3col" style={{ marginTop: GAP_GRID }}>
             {[
-              { t: 'Clinical text', d: 'Notes, extraction, and coding.' },
-              { t: 'Radiology', d: 'X-ray, CT, and MRI review.' },
-              { t: 'Pathology', d: 'Whole-slide and histology.' },
-              { t: 'Medical LLMs', d: 'Output evaluation and RLHF.' },
-              { t: 'Genomics & omics', d: 'Genomic and multi-omic annotation.' },
-              { t: 'De-identification & PHI', d: 'Redaction and PHI review.' },
+              { t: 'Clinical text', d: 'Your model’s extractions and summaries.' },
+              { t: 'Radiology', d: 'Your model’s X-ray, CT, and MRI reads.' },
+              { t: 'Pathology', d: 'Your model’s whole-slide calls.' },
+              { t: 'Medical LLMs', d: 'Your model’s answers — accuracy and safety.' },
+              { t: 'Genomics & omics', d: 'Your model’s variant and omics calls.' },
+              { t: 'De-identification', d: 'Your model’s PHI redaction.' },
             ].map((m, i) => (
               <div key={m.t} style={{ ...CELL, marginLeft: i % 3 === 0 ? 0 : -1, marginTop: i >= 3 ? -1 : 0 }}>
                 <Cell title={m.t} body={m.d} />
@@ -230,7 +230,7 @@ export default function EvaluatePage() {
         </div>
       </section>
 
-      <FooterSection />
+      <EvalFooter />
     </>
   )
 }
