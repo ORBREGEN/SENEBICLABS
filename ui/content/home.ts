@@ -107,6 +107,7 @@ export const FOOTER = {
     ] satisfies NavItem[],
     company: [
       { label: 'About', href: '/about' },
+      { label: 'Research', href: '/research' },
     ] satisfies NavItem[],
     legal: [
       { label: 'Privacy', href: '/privacy' },

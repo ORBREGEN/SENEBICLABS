@@ -19,7 +19,7 @@ export default function NavBar({ active, onLight, minimal }: { active?: Page; on
   const [open, setOpen] = useState(false)
 
   const links = minimal ? [] : LINKS
-  const brandHref = minimal ? '/evaluate' : '/'
+  const brandHref = '/'
   const ctaHref = minimal ? '/submit' : '/experts'
   const ctaLabel = minimal ? 'Book a demo →' : 'Join as specialist →'
 
