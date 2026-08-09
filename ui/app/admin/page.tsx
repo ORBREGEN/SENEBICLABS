@@ -6,7 +6,7 @@ const STAGES = ['submitted', 'scoping', 'agreement', 'pilot', 'production', 'del
 const STORAGE_KEY = 'senebiclabs_admin_key'
 // value, label, required data columns
 const LS_TASK_TYPES: [string, string, string][] = [
-  ['eval_rating', 'Rate response (1–5)', 'prompt, output'],
+  ['eval_rating', 'Rate response (1-5)', 'prompt, output'],
   ['rubric_eval', 'Rubric evaluation (multi-axis)', 'prompt, output'],
   ['preference', 'Compare A / B', 'prompt, output_a, output_b'],
   ['response_writing', 'Write ideal answer', 'prompt'],
@@ -406,7 +406,7 @@ export default function AdminPage() {
 
   const saveConfig = async (id: string) => {
     let cfg: unknown
-    try { cfg = JSON.parse(cfgText[id] ?? '') } catch { setCfgMsg(m => ({ ...m, [id]: 'Invalid JSON — check your brackets/commas.' })); return }
+    try { cfg = JSON.parse(cfgText[id] ?? '') } catch { setCfgMsg(m => ({ ...m, [id]: 'Invalid JSON, check your brackets/commas.' })); return }
     setCfgSaving(id); setCfgMsg(m => ({ ...m, [id]: '' }))
     try {
       const res = await fetch('/api/admin/eval-config', {
@@ -525,7 +525,7 @@ export default function AdminPage() {
         return (
           <div key={s.id} style={card}>
             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-              <h2 style={{ fontSize: 20, fontWeight: 600 }}>{s.company || '—'}</h2>
+              <h2 style={{ fontSize: 20, fontWeight: 600 }}>{s.company || ', '}</h2>
               <span style={{ ...label, color: '#15a34a' }}>{s.stage ?? 'submitted'}</span>
             </div>
             <p style={{ fontSize: 14, color: '#475569', marginTop: 4 }}>
@@ -546,7 +546,7 @@ export default function AdminPage() {
                   const locked = stageLocked(st, p)
                   return (
                     <option key={st} value={st} disabled={locked} style={{ background: '#ffffff', color: locked ? '#9aa1a9' : '#0f172a' }}>
-                      {st}{locked ? ' — locked' : ''}
+                      {st}{locked ? ', locked' : ''}
                     </option>
                   )
                 })}
@@ -670,7 +670,7 @@ export default function AdminPage() {
                       <strong style={{ fontSize: 22 }}>{rpct(reportData[s.id].accuracy?.value)}</strong>{' '}
                       accuracy
                       {reportData[s.id].accuracy?.assessable != null && (
-                        <span style={{ color: '#475569' }}> — {reportData[s.id].accuracy?.correct}/{reportData[s.id].accuracy?.assessable} correct</span>
+                        <span style={{ color: '#475569' }}>, {reportData[s.id].accuracy?.correct}/{reportData[s.id].accuracy?.assessable} correct</span>
                       )}
                     </p>
                     {Array.isArray(reportData[s.id].critical_misses) && reportData[s.id].critical_misses.length > 0 && (
@@ -684,7 +684,7 @@ export default function AdminPage() {
                               {c.finding && <span style={{ color: '#b91c1c', fontWeight: 600, fontSize: 12 }}>{c.finding}</span>}
                             </div>
                             {c.prompt && <p style={{ margin: '5px 0 6px', color: '#0f172a' }}>&ldquo;{c.prompt}&rdquo;</p>}
-                            <span>model said <strong>{c.model_prediction ?? '—'}</strong>{' → clinician read '}<strong>{c.correct_label ?? '—'}</strong></span>
+                            <span>model said <strong>{c.model_prediction ?? ', '}</strong>{' → clinician read '}<strong>{c.correct_label ?? ', '}</strong></span>
                             {c.rationale && <p style={{ margin: '5px 0 0', color: '#64748b', fontStyle: 'italic' }}>{c.rationale}</p>}
                           </div>
                         ))}
@@ -712,7 +712,7 @@ export default function AdminPage() {
                       />
                       <span style={{ color: '#0f172a', fontWeight: 500, fontSize: 15 }}>Drop a CSV or JSON file</span>
                       <span style={{ display: 'block', marginTop: 6, fontSize: 13, color: '#475569' }}>
-                        or click to browse — each row becomes one task
+                        or click to browse, each row becomes one task
                       </span>
                     </label>
                     {parseErr[s.id] && <p style={{ color: '#dc2626', fontSize: 13, marginTop: 10 }}>{parseErr[s.id]}</p>}

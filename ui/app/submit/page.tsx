@@ -96,7 +96,7 @@ export default function SubmitPage() {
         <div className="wrap">
           <div className="submit-split">
 
-            {/* Left — copy */}
+            {/* Left, copy */}
             <div className="submit-copy">
               <span className="micro" style={{ display: 'block', color: 'var(--ink)', marginBottom: 28 }}>For companies</span>
               <h1 style={{
@@ -129,7 +129,7 @@ export default function SubmitPage() {
               </div>
             </div>
 
-            {/* Right — form */}
+            {/* Right, form */}
             <div className="submit-form-col">
               <span className="micro" style={{ display: 'block', color: 'var(--slate)', marginBottom: 18 }}>Tell us about your use case</span>
 
@@ -141,7 +141,7 @@ export default function SubmitPage() {
                   </svg>
                   <div>
                     <h4>Got it{form.firstName ? `, ${form.firstName}` : ''}.</h4>
-                    <p>Last step — pick a time and we&rsquo;ll walk you through it live.</p>
+                    <p>Last step, pick a time and we&rsquo;ll walk you through it live.</p>
                     <a
                       className="sf-submit"
                       style={{ display: 'inline-block', width: 'auto', marginTop: 18, padding: '14px 24px', textDecoration: 'none' }}
@@ -194,7 +194,7 @@ export default function SubmitPage() {
 
                   <div className="sf-field">
                     <label className="sf-label" htmlFor="description">How can we help? *</label>
-                    <p className="sf-help">A line on your model and what you&rsquo;d want reviewed, labeled, or evaluated — so we can tailor the demo to your use case.</p>
+                    <p className="sf-help">A line on your model and what you&rsquo;d want reviewed, labeled, or evaluated, so we can tailor the demo to your use case.</p>
                     <textarea id="description" className="sf-textarea" value={form.description} onChange={set('description')} required disabled={loading} rows={5} />
                   </div>
 

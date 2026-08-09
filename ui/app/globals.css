@@ -301,8 +301,8 @@ nav.top.scrolled {
 .hero { padding: 108px 0 100px; position: relative; overflow: hidden; text-align: center; display: flex; flex-direction: column; align-items: center; }
 
 .sphere-container { position: relative; width: 380px; height: 380px; display: grid; place-items: center; margin: 0 auto; }
-.sphere-glow { position: absolute; inset: -100px; border-radius: 50%; background: radial-gradient(circle at 50% 50%, rgba(255,255,255,0.28) 0%, rgba(255,255,255,0.10) 28%, rgba(255,255,255,0) 60%); filter: blur(20px); pointer-events: none; opacity: .85; }
-.sphere-body { position: relative; width: 270px; height: 270px; border-radius: 50%; background: radial-gradient(circle at 38% 32%, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.10) 18%, rgba(0,0,0,0.95) 55%, #000000 100%); box-shadow: inset 0 0 60px rgba(255,255,255,0.12), inset -40px -40px 100px rgba(0,0,0,0.6), inset 30px 30px 70px rgba(255,255,255,0.06), 0 0 80px rgba(255,255,255,0.18); display: grid; place-items: center; overflow: visible; }
+.sphere-glow { position: absolute; inset: -100px; border-radius: 50%; background: rgba(255,255,255,0.05); filter: blur(20px); pointer-events: none; opacity: .85; }
+.sphere-body { position: relative; width: 270px; height: 270px; border-radius: 50%; background: #0a0a0a; box-shadow: inset 0 0 60px rgba(255,255,255,0.12), inset -40px -40px 100px rgba(0,0,0,0.6), inset 30px 30px 70px rgba(255,255,255,0.06), 0 0 80px rgba(255,255,255,0.18); display: grid; place-items: center; overflow: visible; }
 .sphere-body::after { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 1px solid rgba(255,255,255,0.18); pointer-events: none; }
 .sphere-particles { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 50%; }
 .sphere-rings { position: absolute; inset: -40px; width: calc(100% + 80px); height: calc(100% + 80px); pointer-events: none; }
@@ -463,7 +463,7 @@ h2.title em { font-style: italic; color: var(--teal); }
 .bub.ai { background: #111111; color: #fff; align-self: flex-start; border-bottom-left-radius: 4px; }
 .bub.ai .tag { display: inline-block; font-family: 'Geist Mono', monospace; font-size: 10px; letter-spacing: 0.12em; color: var(--teal); text-transform: uppercase; margin-bottom: 4px; }
 .matched { margin-top: 18px; padding: 14px; border: 1px solid var(--hairline-dark); border-radius: 10px; display: flex; align-items: center; gap: 14px; }
-.matched .av { width: 38px; height: 38px; border-radius: 50%; background: linear-gradient(135deg,#111111,#333333); color: #fff; display: grid; place-items: center; font-family: 'Geist', sans-serif; font-size: 15px; flex-shrink: 0; }
+.matched .av { width: 38px; height: 38px; border-radius: 50%; background: #2a2a2a; color: #fff; display: grid; place-items: center; font-family: 'Geist', sans-serif; font-size: 15px; flex-shrink: 0; }
 .matched .who { flex: 1; }
 .matched .who .n { font-size: 14px; font-weight: 500; }
 .matched .who .r { font-size: 12px; color: var(--slate-2); margin-top: 2px; }
@@ -482,7 +482,7 @@ h2.title em { font-style: italic; color: var(--teal); }
 
 .console {
   position: relative;
-  background: linear-gradient(180deg,#111111 0%,#000000 100%);
+  background: #0a0a0a;
   border: 1px solid var(--hairline);
   border-radius: 12px;
   overflow: hidden;
@@ -497,13 +497,13 @@ h2.title em { font-style: italic; color: var(--teal); }
   height: 200px;
   border: 1px solid var(--hairline);
   border-radius: 8px;
-  background: radial-gradient(ellipse at center,rgba(255,255,255,0.04),transparent 70%);
+  background: rgba(255,255,255,0.02);
   overflow: hidden;
 }
 .scope .gridlines {
   position: absolute;
   inset: 0;
-  background-image: linear-gradient(var(--hairline) 1px,transparent 1px), linear-gradient(90deg,var(--hairline) 1px,transparent 1px);
+  background-image: none;
   background-size: 40px 40px;
   opacity: .5;
 }
@@ -540,9 +540,7 @@ h2.title em { font-style: italic; color: var(--teal); }
 .case .pane { border: 1px solid var(--hairline); border-radius: 8px; padding: 16px; min-height: 160px; position: relative; }
 .case .pane .pl { font-family: 'Geist Mono', monospace; font-size: 10px; letter-spacing: 0.14em; color: var(--slate); text-transform: uppercase; margin-bottom: 12px; }
 .case .pane.scan {
-  background:
-    repeating-linear-gradient(0deg,rgba(255,255,255,0.05) 0,rgba(255,255,255,0.05) 1px,transparent 1px,transparent 6px),
-    radial-gradient(ellipse at 60% 40%,rgba(255,255,255,0.10),transparent 60%);
+  background: rgba(255,255,255,0.04);
 }
 .case .pane.scan .marker { position: absolute; border: 1px solid var(--teal); border-radius: 50%; background: rgba(255,255,255,0.08); }
 .case .findings { padding: 18px 22px; border-top: 1px solid var(--hairline); display: flex; flex-direction: column; gap: 12px; }
@@ -624,7 +622,7 @@ h2.title em { font-style: italic; color: var(--teal); }
 .team-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 2px; background: var(--hairline); border: 1px solid var(--hairline); border-radius: 8px; overflow: hidden; }
 .team-member { background: var(--navy); display: flex; gap: 28px; padding: 40px 36px; align-items: flex-start; transition: background .25s ease; }
 .team-member:hover { background: var(--navy-2); }
-.team-avatar { width: 48px; height: 48px; border-radius: 50%; background: linear-gradient(135deg, var(--navy-3), #333333); border: 1px solid var(--hairline-strong); color: var(--ink); display: grid; place-items: center; font-family: 'Geist', sans-serif; font-size: 16px; flex-shrink: 0; }
+.team-avatar { width: 48px; height: 48px; border-radius: 50%; background: var(--navy-3); border: 1px solid var(--hairline-strong); color: var(--ink); display: grid; place-items: center; font-family: 'Geist', sans-serif; font-size: 16px; flex-shrink: 0; }
 .team-info { flex: 1; }
 .team-name { font-size: 15px; font-weight: 500; color: var(--ink); }
 .team-role { font-family: 'Geist Mono', monospace; font-size: 13px; letter-spacing: 0.10em; text-transform: uppercase; color: var(--teal); margin-top: 4px; }
@@ -747,9 +745,9 @@ footer .legal { display: flex; justify-content: space-between; margin-top: 64px;
   h1.display { font-size: 64px; }
   h2.title { font-size: 44px; }
   .section-head { gap: 48px; }
-  /* Paths — 2 columns on tablet */
+  /* Paths, 2 columns on tablet */
   .paths-grid { grid-template-columns: repeat(2, 1fr) !important; gap: 48px !important; }
-  /* Approach & Science — stack on tablet */
+  /* Approach & Science, stack on tablet */
   .approach-grid { grid-template-columns: 1fr 1fr !important; gap: 48px !important; }
   .science-stats  { grid-template-columns: repeat(2, 1fr) !important; gap: 40px !important; }
   /* New home sections */
@@ -780,7 +778,7 @@ footer .legal { display: flex; justify-content: space-between; margin-top: 64px;
 
 @media (max-width: 768px) {
   .wrap { padding: 0 20px; }
-  /* Paths — single column on mobile */
+  /* Paths, single column on mobile */
   .paths-grid { grid-template-columns: 1fr !important; gap: 40px !important; }
   .approach-grid { grid-template-columns: 1fr !important; gap: 40px !important; }
   .science-stats  { grid-template-columns: repeat(2, 1fr) !important; gap: 32px !important; }
@@ -1255,7 +1253,7 @@ details[open] > .faq-q {
 .ex-who-card p { font-size: 14px; line-height: 1.7; color: var(--slate); text-wrap: pretty; flex: 1; }
 .ex-who-reqs { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
 .ex-req { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; color: var(--slate); line-height: 1.5; }
-.ex-req::before { content: '—'; color: var(--teal); flex-shrink: 0; font-family: 'Geist Mono', monospace; font-size: 11px; margin-top: 2px; }
+.ex-req::before { content: ', '; color: var(--teal); flex-shrink: 0; font-family: 'Geist Mono', monospace; font-size: 11px; margin-top: 2px; }
 
 /* How it works */
 .ex-how { padding: 120px 0; border-top: 1px solid var(--hairline); }
@@ -1288,7 +1286,7 @@ details[open] > .faq-q {
 .ex-impact-item h3 { font-family: 'Geist', sans-serif; font-size: 19px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.3; }
 .ex-impact-item p { font-size: 14px; line-height: 1.7; color: var(--slate); margin-top: 10px; text-wrap: pretty; }
 
-/* Why join — benefits strip */
+/* Why join, benefits strip */
 .ex-why { padding: 100px 0; border-top: 1px solid var(--hairline); }
 .ex-why-title { font-family: 'Geist', sans-serif; font-size: 36px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.2; margin-top: 20px; max-width: 560px; }
 .ex-why-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px; background: var(--hairline); border: 1px solid var(--hairline); border-radius: 16px; overflow: hidden; margin-top: 48px; }
@@ -1337,7 +1335,7 @@ details[open] > .faq-q {
 .wl-fields { display: flex; flex-direction: column; gap: 10px; width: 100%; }
 .wl-form-v2 .wl-submit { width: 100%; justify-content: center; }
 
-/* Tasks — redesigned cards */
+/* Tasks, redesigned cards */
 .ex-tasks-section { padding: 120px 0; border-top: 1px solid var(--hairline); }
 .ex-tasks-head { display: grid; grid-template-columns: 1fr 1fr; gap: 80px; align-items: end; margin-top: 28px; margin-bottom: 56px; }
 .ex-tasks-head h2 { font-family: 'Geist', sans-serif; font-size: 48px; font-weight: 700; letter-spacing: -0.03em; line-height: 1.05; }
@@ -1468,7 +1466,7 @@ details[open] > .faq-q {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   EXPERTS PAGE — ol-* (Outlier-inspired, light theme)
+   EXPERTS PAGE, ol-* (Outlier-inspired, light theme)
    ═══════════════════════════════════════════════════════════════════ */
 
 /* ── Hero ─────────────────────────────────────────────────────────── */
@@ -2255,7 +2253,7 @@ nav.top.nav-on-light {
 .pt-brief { margin-top: 28px; }
 .pt-steps { margin-top: 8px; }
 
-/* ── Work queue — premium dark task workspace ─────────────────────── */
+/* ── Work queue, premium dark task workspace ─────────────────────── */
 .wq { min-height: 100vh; background: #0a0b0d; color: #f3f4f6; }
 .wq-bar {
   position: sticky; top: 0; z-index: 10;
@@ -2519,7 +2517,7 @@ footer .grid { grid-template-columns: 1.6fr 1fr 1fr 1fr !important; }
   .cx-top { padding: 12px 16px; }
 }
 
-/* Task workspace — 3 columns: instructions / work area / submission */
+/* Task workspace, 3 columns: instructions / work area / submission */
 .cx-ws { min-height: 100vh; display: flex; flex-direction: column; background: var(--cx-bg); color: var(--cx-text); }
 .cx-ws-top { display: flex; align-items: center; gap: 16px; padding: 13px 24px; border-bottom: 1px solid var(--cx-border); }
 .cx-ws-back { display: inline-flex; align-items: center; gap: 7px; color: var(--cx-muted); text-decoration: none; font-weight: 500; font-size: 14px; }

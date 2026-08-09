@@ -140,7 +140,7 @@ function DataUpload({ project, token, onUploaded }: { project: Project; token: s
         </p>
       ) : (
         <p style={{ fontSize: 14.5, color: 'var(--ink)', lineHeight: 1.6, marginBottom: 14 }}>
-          Drop your dataset — each row becomes one labeling task. For image tasks (X-rays, scans),
+          Drop your dataset, each row becomes one labeling task. For image tasks (X-rays, scans),
           drop the image files alongside your CSV and we&apos;ll match them by name.
         </p>
       )}
@@ -152,7 +152,7 @@ function DataUpload({ project, token, onUploaded }: { project: Project; token: s
         >
           <input type="file" accept=".csv,.json,text/csv,application/json,image/*" multiple style={{ display: 'none' }}
             onChange={e => { if (e.target.files?.length) onFiles(e.target.files); e.target.value = '' }} />
-          <span style={{ color: 'var(--ink)', fontWeight: 500, fontSize: 15 }}>Drop your CSV or JSON — plus image files if it&apos;s an image task</span>
+          <span style={{ color: 'var(--ink)', fontWeight: 500, fontSize: 15 }}>Drop your CSV or JSON, plus image files if it&apos;s an image task</span>
           <span style={{ display: 'block', marginTop: 6, fontSize: 13, color: 'var(--slate)' }}>or click to browse · each row becomes one task</span>
         </label>
       ) : (
@@ -173,7 +173,7 @@ function DataUpload({ project, token, onUploaded }: { project: Project; token: s
               <input type="file" accept="image/*" multiple style={{ display: 'none' }}
                 onChange={e => { if (e.target.files) addImages(e.target.files); e.target.value = '' }} />
               <span style={{ color: 'var(--ink)', fontWeight: 500, fontSize: 15 }}>
-                {imageCount > 0 ? `${imageCount} image files selected — add more if needed` : 'Add the image files named in your CSV'}
+                {imageCount > 0 ? `${imageCount} image files selected, add more if needed` : 'Add the image files named in your CSV'}
               </span>
               <span style={{ display: 'block', marginTop: 6, fontSize: 13, color: 'var(--slate)' }}>each image is stored privately, de-identified</span>
             </label>
@@ -299,7 +299,7 @@ function DeliveredResults({ project, token }: { project: Project; token: string 
 
           {report.critical_misses.length > 0 && (
             <div style={{ marginBottom: 22 }}>
-              <span className="micro" style={{ display: 'block', marginBottom: 8, color: '#b91c1c' }}>Critical misses ({report.critical_misses.length}) — findings the clinician caught, the model didn&rsquo;t</span>
+              <span className="micro" style={{ display: 'block', marginBottom: 8, color: '#b91c1c' }}>Critical misses ({report.critical_misses.length}), findings the clinician caught, the model didn&rsquo;t</span>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {report.critical_misses.map((c, i) => (
                   <div key={i} style={{ background: '#fff', border: '1px solid #f0d0d0', borderLeft: '3px solid #b91c1c', borderRadius: 8, padding: '12px 14px', fontSize: 14 }}>
@@ -317,7 +317,7 @@ function DeliveredResults({ project, token }: { project: Project; token: string 
           )}
 
           <p style={{ fontSize: 12.5, color: '#3a4655', lineHeight: 1.6, marginBottom: 18 }}>
-            Measured on the {acc.assessable} reviewed cases — this describes your model&rsquo;s agreement with the clinician on this sample, not its accuracy across a full population.
+            Measured on the {acc.assessable} reviewed cases, this describes your model&rsquo;s agreement with the clinician on this sample, not its accuracy across a full population.
           </p>
         </>
       )}

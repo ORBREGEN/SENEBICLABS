@@ -126,10 +126,10 @@ export default function ContributorPage() {
   const line = pts.map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(' ')
 
   const stats = [
-    { label: 'Earned this week', value: data ? `$${data.earned_week.toFixed(2)}` : '—', icon: 'earnings' },
-    { label: 'Items this week', value: data ? String(data.this_week) : '—', icon: 'trend' },
-    { label: 'Day streak', value: data ? String(data.streak) : '—', icon: 'flame' },
-    { label: 'Total labeled', value: data ? data.total_labeled.toLocaleString() : '—', icon: 'check' },
+    { label: 'Earned this week', value: data ? `$${data.earned_week.toFixed(2)}` : ', ', icon: 'earnings' },
+    { label: 'Items this week', value: data ? String(data.this_week) : ', ', icon: 'trend' },
+    { label: 'Day streak', value: data ? String(data.streak) : ', ', icon: 'flame' },
+    { label: 'Total labeled', value: data ? data.total_labeled.toLocaleString() : ', ', icon: 'check' },
   ]
 
   return (

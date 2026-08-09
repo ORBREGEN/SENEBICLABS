@@ -1,4 +1,4 @@
-// Structured footer for the eval-business funnel — same layout as the site footer,
+// Structured footer for the eval-business funnel, same layout as the site footer,
 // no links to the science side.
 const NAV = {
   product: [
@@ -25,7 +25,7 @@ export default function EvalFooter() {
           <div>
             <a className="brand" href="/">Senebiclabs</a>
             <p style={{ marginTop: '18px', maxWidth: '320px', lineHeight: '1.6', color: 'var(--slate)', fontSize: '13.5px' }}>
-              The clinician-grade data layer for medical AI — labeling, evaluation, and RLHF.
+              The clinician-grade data layer for medical AI: labeling, evaluation, and RLHF.
             </p>
           </div>
           <div>

@@ -5,11 +5,11 @@ import EvalFooter from './components/EvalFooter'
 export const metadata: Metadata = {
   title: 'Data infrastructure for medical AI',
   description:
-    "Senebiclabs is the data layer for medical AI. Licensed clinicians label, evaluate, and create the data that trains and validates your models — across radiology, pathology, clinical text, and medical LLMs.",
+    "Senebiclabs is the data layer for medical AI. Licensed clinicians label, evaluate, and create the data that trains and validates your models, across radiology, pathology, clinical text, and medical LLMs.",
   alternates: { canonical: '/' },
   openGraph: {
     title: 'The data layer for medical AI · Senebiclabs',
-    description: 'Licensed clinicians label, evaluate, and create clinician-grade data for medical AI — with quality you can defend.',
+    description: 'Licensed clinicians label, evaluate, and create clinician-grade data for medical AI, with quality you can defend.',
     url: 'https://senebiclabs.com',
   },
 }
@@ -24,7 +24,7 @@ const T_SUB: React.CSSProperties = { fontFamily: BODY, fontWeight: 300, fontSize
 const T_BODY: React.CSSProperties = { fontFamily: BODY, fontWeight: 300, fontSize: 16, lineHeight: 1.72, color: 'rgba(255,255,255,0.7)' }
 const em: React.CSSProperties = { fontWeight: 600, fontStyle: 'normal' }
 
-// ── One spacing scale — reused everywhere, no one-off values ──
+// ── One spacing scale, reused everywhere, no one-off values ──
 const PAD_SECTION = 'clamp(104px, 13vw, 168px) 0'
 const GAP_GRID = 'clamp(64px, 7vw, 88px)'          // section header → grid
 const PAD_CELL = 'clamp(40px, 4.4vw, 52px) clamp(30px, 3vw, 40px)'
@@ -80,7 +80,7 @@ export default function EvaluatePage() {
           </h1>
           <p style={{ ...T_SUB, fontSize: 'clamp(18px, 1.9vw, 22px)', maxWidth: 700, margin: '36px auto 0' }}>
             Licensed clinicians label, evaluate, and create the data that trains and
-            validates your models &mdash; the layer between raw medicine and a model you can trust.
+            validates your models. The layer between raw medicine and a model you can trust.
           </p>
           <div style={{ marginTop: 52, display: 'flex', justifyContent: 'center' }}>
             <Cta center />
@@ -104,12 +104,12 @@ export default function EvaluatePage() {
       <section id="what-you-get" style={{ ...SECTION, scrollMarginTop: 90 }}>
         <div className="wrap">
           <Head tag="What we do" title={<>Label. Evaluate. <em style={em}>Create</em>.</>}
-                sub="The three kinds of data work medical AI runs on — all done by licensed clinicians." />
+                sub="The three kinds of data work medical AI runs on, all done by licensed clinicians." />
 
           <div className="blocks-3col" style={{ marginTop: GAP_GRID }}>
             {[
-              { n: '01', t: 'Label', d: 'Turn raw medical data into ground truth — imaging labels, clinical extraction, classification, de-identification.' },
-              { n: '02', t: 'Evaluate', d: 'Grade your model’s outputs — right, wrong, and the critical misses — in a report you can defend.' },
+              { n: '01', t: 'Label', d: 'Turn raw medical data into ground truth: imaging labels, clinical extraction, classification, and de-identification.' },
+              { n: '02', t: 'Evaluate', d: 'Grade your model’s outputs against a clinician’s read, with every critical miss surfaced, in a report you can defend.' },
               { n: '03', t: 'Create', d: 'Clinician-written gold answers and demonstrations to fine-tune and align on.' },
             ].map((c, i) => (
               <div key={c.n} style={{ ...CELL, marginLeft: i % 3 === 0 ? 0 : -1 }}>
@@ -118,12 +118,12 @@ export default function EvaluatePage() {
             ))}
           </div>
 
-          {/* Deliverable — full-width panel, flush under the grid */}
+          {/* Deliverable, full-width panel, flush under the grid */}
           <div style={{ ...CELL, marginTop: -1, padding: 'clamp(56px, 6vw, 80px) clamp(30px, 3vw, 40px)', textAlign: 'center' }}>
             <span className="iso-label" style={eyebrow(GAP_HEAD)}>The deliverable</span>
             <h3 style={{ ...T_H2, fontSize: 'clamp(26px, 3vw, 40px)', margin: '0 auto', maxWidth: 640 }}>Data you can defend.</h3>
             <p style={{ ...T_SUB, margin: '28px auto 0', maxWidth: 700 }}>
-              Labeled datasets, scored reports, or gold examples — every item traceable to a
+              Labeled datasets, scored reports, or gold examples, every item traceable to a
               licensed clinician and keyed to your own case IDs.
             </p>
           </div>
@@ -157,7 +157,7 @@ export default function EvaluatePage() {
       <section id="about" style={{ ...SECTION, scrollMarginTop: 90 }}>
         <div className="wrap">
           <Head tag="About" title={<>How the work <em style={em}>holds up</em>.</>}
-                sub="Licensed clinicians do structured, case-by-case work — built so the result holds up." />
+                sub="Licensed clinicians do structured, case-by-case work, built so the result holds up." />
 
           <div className="cards-2col" style={{ marginTop: GAP_GRID, gap: 1, background: 'var(--hairline)', borderRadius: 0 }}>
             <div style={{ background: 'var(--navy)', padding: PAD_CELL, display: 'flex', flexDirection: 'column' }}>
@@ -168,7 +168,7 @@ export default function EvaluatePage() {
             <div style={{ background: 'var(--navy)', padding: PAD_CELL, display: 'flex', flexDirection: 'column' }}>
               <Cell tag="Why it holds up"
                     title="Defensible by construction"
-                    body="Each case gets a structured, multi-dimension assessment. Data is de-identified and isolated per client, and every task is recorded — who did what, and when." />
+                    body="Each case gets a structured, multi-dimension assessment. Data is de-identified and isolated per client, and every task is recorded: who did what, and when." />
             </div>
           </div>
         </div>
@@ -204,8 +204,8 @@ export default function EvaluatePage() {
           <div className="blocks-3col" style={{ marginTop: GAP_GRID }}>
             {[
               { n: 'Step 01', t: 'Send your data', d: 'Raw data to label, or your model’s outputs to evaluate.' },
-              { n: 'Step 02', t: 'Clinicians work', d: 'Licensed specialists label, evaluate, or write — de-identified and isolated.' },
-              { n: 'Step 03', t: 'You get it back', d: 'Labeled data, a scored report, or gold examples — keyed to your IDs.' },
+              { n: 'Step 02', t: 'Clinicians work', d: 'Licensed specialists label, evaluate, or write, de-identified and isolated.' },
+              { n: 'Step 03', t: 'You get it back', d: 'Labeled data, a scored report, or gold examples, keyed to your IDs.' },
             ].map((s, i) => (
               <div key={s.n} style={{ ...CELL, marginLeft: i % 3 === 0 ? 0 : -1 }}>
                 <Cell tag={s.n} title={s.t} body={s.d} />
@@ -222,7 +222,7 @@ export default function EvaluatePage() {
             Build medical AI on data you can <em style={em}>defend</em>.
           </h2>
           <p style={{ ...T_SUB, maxWidth: 560, margin: '28px auto 0' }}>
-            Book a demo — see how clinician-grade data changes what your model can prove.
+            Book a demo to see how clinician-grade data changes what your model can prove.
           </p>
           <div style={{ marginTop: 52, display: 'flex', justifyContent: 'center' }}>
             <Cta center />

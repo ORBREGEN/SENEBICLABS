@@ -140,7 +140,7 @@ function StepForm() {
             {f.label}
           </span>
           <span style={{ fontSize: 16, flex: 1 }}>
-            {form[f.key] || '—'}
+            {form[f.key] || ', '}
           </span>
           <button
             onClick={() => setStep(i)}
