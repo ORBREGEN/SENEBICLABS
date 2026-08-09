@@ -9,7 +9,7 @@ export default function EvalNav() {
     <nav className="top scrolled">
       <div className="wrap row">
 
-        {/* The one clean exit: logo -> home */}
+        {/* The one clean exit: logo -> home  */}
         <a className="brand" href="/">
           <span className="mark"><Logo size={20} /></span>
           Senebiclabs
@@ -17,7 +17,7 @@ export default function EvalNav() {
 
         {/* In-page anchors to the proof (desktop only; .nav-links hides under 768px).
             All four are on-page section jumps, About is this service's #about, not the
-            main-site company About. No directory links, no dropdowns. */}
+            main-site company About. No directory links, no dropdowns.  */}
         <div className="nav-links">
           <a href="#what-you-get">What you get</a>
           <a href="#modalities">Modalities</a>
@@ -25,7 +25,7 @@ export default function EvalNav() {
           <a href="#why-us">Why us</a>
         </div>
 
-        {/* Persistent CTA, always visible, including mobile */}
+        {/* Persistent CTA, always visible, including mobile  */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, gridColumn: 3 }}>
           <a href="/submit" className="nav-join-cta">Book a demo →</a>
         </div>

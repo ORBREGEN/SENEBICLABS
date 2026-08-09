@@ -14,7 +14,7 @@ export const metadata: Metadata = {
   },
 }
 
-// ── One type scale (6 sizes), 3 weights: 100 headings · 300 body · 600 accent ──
+// One type scale (6 sizes), 3 weights: 100 headings · 300 body · 600 accent
 const DISPLAY = '"SF Pro Display", -apple-system, BlinkMacSystemFont, system-ui, sans-serif'
 const BODY = '"DM Sans", system-ui, sans-serif'
 const T_DISPLAY: React.CSSProperties = { fontFamily: DISPLAY, fontWeight: 100, fontSize: 'clamp(44px, 6.6vw, 88px)', letterSpacing: '0.03em', lineHeight: 1.04 }
@@ -24,7 +24,7 @@ const T_SUB: React.CSSProperties = { fontFamily: BODY, fontWeight: 300, fontSize
 const T_BODY: React.CSSProperties = { fontFamily: BODY, fontWeight: 300, fontSize: 16, lineHeight: 1.72, color: 'rgba(255,255,255,0.7)' }
 const em: React.CSSProperties = { fontWeight: 600, fontStyle: 'normal' }
 
-// ── One spacing scale, reused everywhere, no one-off values ──
+// One spacing scale, reused everywhere, no one-off values
 const PAD_SECTION = 'clamp(104px, 13vw, 168px) 0'
 const GAP_GRID = 'clamp(64px, 7vw, 88px)'          // section header → grid
 const PAD_CELL = 'clamp(40px, 4.4vw, 52px) clamp(30px, 3vw, 40px)'
@@ -71,7 +71,7 @@ export default function EvaluatePage() {
     <>
       <EvalNav />
 
-      {/* ── HERO ───────────────────────────────────────────────────────── */}
+      {/* HERO  */}
       <section style={{ padding: 'clamp(164px, 20vw, 240px) 0 clamp(96px, 12vw, 136px)' }}>
         <div className="wrap" style={{ textAlign: 'center' }}>
           <span className="iso-label" style={eyebrow(36)}>Data infrastructure for medical AI</span>
@@ -88,7 +88,7 @@ export default function EvaluatePage() {
         </div>
       </section>
 
-      {/* ── THE PROBLEM ────────────────────────────────────────────────── */}
+      {/* THE PROBLEM  */}
       <section style={SECTION}>
         <div className="wrap" style={{ textAlign: 'center' }}>
           <span className="iso-label" style={eyebrow(GAP_HEAD)}>The problem</span>
@@ -100,7 +100,7 @@ export default function EvaluatePage() {
         </div>
       </section>
 
-      {/* ── WHAT YOU GET ───────────────────────────────────────────────── */}
+      {/* WHAT YOU GET  */}
       <section id="what-you-get" style={{ ...SECTION, scrollMarginTop: 90 }}>
         <div className="wrap">
           <Head tag="What we do" title={<>Label. Evaluate. <em style={em}>Create</em>.</>}
@@ -118,7 +118,7 @@ export default function EvaluatePage() {
             ))}
           </div>
 
-          {/* Deliverable, full-width panel, flush under the grid */}
+          {/* Deliverable, full-width panel, flush under the grid  */}
           <div style={{ ...CELL, marginTop: -1, padding: 'clamp(56px, 6vw, 80px) clamp(30px, 3vw, 40px)', textAlign: 'center' }}>
             <span className="iso-label" style={eyebrow(GAP_HEAD)}>The deliverable</span>
             <h3 style={{ ...T_H2, fontSize: 'clamp(26px, 3vw, 40px)', margin: '0 auto', maxWidth: 640 }}>Data you can defend.</h3>
@@ -130,7 +130,7 @@ export default function EvaluatePage() {
         </div>
       </section>
 
-      {/* ── MODALITIES (peer list) ─────────────────────────────────────── */}
+      {/* MODALITIES (peer list)  */}
       <section id="modalities" style={{ ...SECTION, scrollMarginTop: 90 }}>
         <div className="wrap">
           <Head tag="What we cover" title={<>Across every medical <em style={em}>modality</em>.</>}
@@ -153,7 +153,7 @@ export default function EvaluatePage() {
         </div>
       </section>
 
-      {/* ── ABOUT (this service only) ──────────────────────────────────── */}
+      {/* ABOUT (this service only)  */}
       <section id="about" style={{ ...SECTION, scrollMarginTop: 90 }}>
         <div className="wrap">
           <Head tag="About" title={<>How the work <em style={em}>holds up</em>.</>}
@@ -174,7 +174,7 @@ export default function EvaluatePage() {
         </div>
       </section>
 
-      {/* ── WHY US (even 2×2) ──────────────────────────────────────────── */}
+      {/* WHY US (even 2×2)  */}
       <section id="why-us" style={{ ...SECTION, scrollMarginTop: 90 }}>
         <div className="wrap">
           <Head tag="Why us" title={<>Compliance-grade by <em style={em}>default</em>.</>}
@@ -195,7 +195,7 @@ export default function EvaluatePage() {
         </div>
       </section>
 
-      {/* ── HOW IT WORKS ───────────────────────────────────────────────── */}
+      {/* HOW IT WORKS  */}
       <section style={SECTION}>
         <div className="wrap">
           <Head tag="How it works" title={<>Prove it on a <em style={em}>slice</em> first.</>}
@@ -215,7 +215,7 @@ export default function EvaluatePage() {
         </div>
       </section>
 
-      {/* ── CLOSE ──────────────────────────────────────────────────────── */}
+      {/* CLOSE  */}
       <section style={SECTION}>
         <div className="wrap" style={{ textAlign: 'center' }}>
           <h2 style={{ ...T_H2, maxWidth: 720, margin: '0 auto' }}>

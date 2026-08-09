@@ -91,7 +91,7 @@ export default function ContributorPage() {
     load(c)
   }, [load])
 
-  // ── code gate ───────────────────────────────────────────────────────────────
+  // code gate
   if (needCode) {
     const inp: React.CSSProperties = { width: '100%', background: 'var(--cx-surface-2)', border: '1px solid var(--cx-border)', borderRadius: 10, padding: '12px 14px', color: 'var(--cx-text)', fontFamily: 'inherit', fontSize: 14, outline: 'none' }
     return (

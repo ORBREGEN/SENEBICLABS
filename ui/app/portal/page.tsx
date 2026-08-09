@@ -454,12 +454,12 @@ export default function PortalPage() {
               Your project.
             </h1>
 
-            {/* Loading */}
+            {/* Loading  */}
             {token && loading && (
               <p style={{ fontSize: 17, color: 'var(--ink)', lineHeight: 1.7 }}>Loading your project…</p>
             )}
 
-            {/* Projects */}
+            {/* Projects  */}
             {showProjects && (
               <div style={{ marginTop: 44 }}>
                 {projects!.map(p => <Tracker key={p.id} project={p} token={token!} onUploaded={() => loadProjects(token!)} />)}
@@ -469,14 +469,14 @@ export default function PortalPage() {
               </div>
             )}
 
-            {/* Token but no projects */}
+            {/* Token but no projects  */}
             {token && !loading && projects && projects.length === 0 && (
               <p style={{ fontSize: 17, color: 'var(--ink)', lineHeight: 1.7, marginTop: 20 }}>
                 We could not find a project tied to this link. If you have submitted one, request a fresh link below.
               </p>
             )}
 
-            {/* Email request form (no token, or expired/invalid token) */}
+            {/* Email request form (no token, or expired/invalid token)  */}
             {showEmailForm && !showProjects && (
               <div style={{ maxWidth: 460, marginTop: token ? 40 : 8 }}>
                 {fetchError && (

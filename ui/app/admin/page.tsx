@@ -157,7 +157,7 @@ export default function AdminPage() {
         const cr = await fetch('/api/admin/clinicians', { headers: { 'x-admin-key': k } })
         const cd = await cr.json()
         if (cd.ok) setClinicians(cd.clinicians ?? [])
-      } catch { /* ignore */ }
+      } catch { /* ignore  */ }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Could not load.')
       setAuthed(false)
@@ -207,7 +207,7 @@ export default function AdminPage() {
       const res = await fetch(`/api/admin/progress?project=${id}`, { headers: { 'x-admin-key': k } })
       const data = await res.json()
       if (data.ok) setProgress(p => ({ ...p, [id]: { total: data.total, done: data.done } }))
-    } catch { /* ignore */ }
+    } catch { /* ignore  */ }
   }, [])
 
   const toggleItems = (id: string) => {
@@ -453,7 +453,7 @@ export default function AdminPage() {
 
   const rpct = (v: number | null | undefined) => (v == null ? 'n/a' : `${Math.round(v * 100)}%`)
 
-  // ── Key gate ──────────────────────────────────────────────────────────────
+  // Key gate
   if (!authed) {
     return (
       <main style={{ ...page, display: 'grid', placeItems: 'center', padding: 24 }}>
@@ -477,7 +477,7 @@ export default function AdminPage() {
     )
   }
 
-  // ── Dashboard ─────────────────────────────────────────────────────────────
+  // Dashboard
   return (
     <div style={page}>
     <main style={{ maxWidth: 880, margin: '0 auto', padding: '48px 24px 96px' }}>
@@ -490,7 +490,7 @@ export default function AdminPage() {
       </div>
       <p style={{ ...label, marginBottom: 28 }}>{subs.length} total</p>
 
-      {/* Clinicians */}
+      {/* Clinicians  */}
       <div style={{ ...card, marginBottom: 30 }}>
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 16 }}>
           <h2 style={{ fontSize: 16, fontWeight: 600 }}>Clinicians</h2>
@@ -567,7 +567,7 @@ export default function AdminPage() {
               </p>
             )}
 
-            {/* Work: items, queue, export */}
+            {/* Work: items, queue, export  */}
             <div style={{ marginTop: 18, paddingTop: 18, borderTop: '1px solid #eef0f2', display: 'flex', gap: 18, alignItems: 'center', flexWrap: 'wrap' }}>
               <button onClick={() => toggleItems(s.id)} style={{ ...label, background: 'none', border: 'none', cursor: 'pointer' }}>
                 {openId === s.id ? 'Hide items ▲' : 'Add items ▼'}
@@ -676,7 +676,7 @@ export default function AdminPage() {
                     {Array.isArray(reportData[s.id].critical_misses) && reportData[s.id].critical_misses.length > 0 && (
                       <div style={{ marginTop: 12 }}>
                         <span style={{ ...label, color: '#b91c1c' }}>Critical misses ({reportData[s.id].critical_misses.length})</span>
-                        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any  */}
                         {reportData[s.id].critical_misses.map((c: any, i: number) => (
                           <div key={i} style={{ fontSize: 13, marginTop: 8, lineHeight: 1.5, paddingTop: 8, borderTop: i ? '1px solid #eef0f2' : 'none' }}>
                             <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between', flexWrap: 'wrap' }}>

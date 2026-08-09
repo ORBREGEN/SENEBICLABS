@@ -96,7 +96,7 @@ export default function SubmitPage() {
         <div className="wrap">
           <div className="submit-split">
 
-            {/* Left, copy */}
+            {/* Left, copy  */}
             <div className="submit-copy">
               <span className="micro" style={{ display: 'block', color: 'var(--ink)', marginBottom: 28 }}>For companies</span>
               <h1 style={{
@@ -129,7 +129,7 @@ export default function SubmitPage() {
               </div>
             </div>
 
-            {/* Right, form */}
+            {/* Right, form  */}
             <div className="submit-form-col">
               <span className="micro" style={{ display: 'block', color: 'var(--slate)', marginBottom: 18 }}>Tell us about your use case</span>
 

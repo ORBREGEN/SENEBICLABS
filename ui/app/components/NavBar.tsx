@@ -32,7 +32,7 @@ export default function NavBar({ active, onLight, minimal }: { active?: Page; on
           Senebiclabs
         </a>
 
-        {/* Desktop links */}
+        {/* Desktop links  */}
         {!minimal && (
           <div className="nav-links">
             {links.map(l => (
@@ -43,7 +43,7 @@ export default function NavBar({ active, onLight, minimal }: { active?: Page; on
           </div>
         )}
 
-        {/* Right side: CTA, plus hamburger only when there are links */}
+        {/* Right side: CTA, plus hamburger only when there are links  */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, gridColumn: 3 }}>
           <a href={ctaHref} className={minimal ? 'nav-join-cta' : 'nav-join-cta nav-cta-desktop'}>{ctaLabel}</a>
           {!minimal && (
@@ -67,7 +67,7 @@ export default function NavBar({ active, onLight, minimal }: { active?: Page; on
 
       </div>
 
-      {/* Mobile menu (science nav only) */}
+      {/* Mobile menu (science nav only)  */}
       {!minimal && open && (
         <div className="nav-mobile-menu">
           {links.map(l => (
