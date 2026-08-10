@@ -4,6 +4,7 @@ import { parseDataset, type ParsedDataset } from '../lib/dataset'
 
 const STAGES = ['submitted', 'scoping', 'agreement', 'pilot', 'production', 'delivered']
 const STORAGE_KEY = 'senebiclabs_admin_key'
+const API_BASE = 'https://senebiclabs-api-777437555578.us-central1.run.app/api/v1/project'
 // value, label, required data columns
 const LS_TASK_TYPES: [string, string, string][] = [
   ['eval_rating', 'Rate response (1-5)', 'prompt, output'],
@@ -139,6 +140,8 @@ export default function AdminPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [reportData, setReportData] = useState<Record<string, any>>({})
   const [reportLoading, setReportLoading] = useState<string | null>(null)
+  const [apiKey, setApiKey] = useState<Record<string, string>>({})
+  const [apiKeyLoading, setApiKeyLoading] = useState<string | null>(null)
 
   const load = useCallback(async (k: string) => {
     setLoading(true)
@@ -453,6 +456,22 @@ export default function AdminPage() {
 
   const rpct = (v: number | null | undefined) => (v == null ? 'n/a' : `${Math.round(v * 100)}%`)
 
+  const genApiKey = async (id: string) => {
+    setApiKeyLoading(id)
+    try {
+      const res = await fetch('/api/admin/api-key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-key': key },
+        body: JSON.stringify({ project_id: id }),
+      })
+      const data = await res.json()
+      if (!data.ok) throw new Error(data.message ?? 'Failed')
+      setApiKey(k => ({ ...k, [id]: data.api_key }))
+    } catch (err: unknown) {
+      setApiKey(k => ({ ...k, [id]: 'ERROR: ' + (err instanceof Error ? err.message : 'Failed') }))
+    } finally { setApiKeyLoading(null) }
+  }
+
   // Key gate
   if (!authed) {
     return (
@@ -576,6 +595,9 @@ export default function AdminPage() {
                 {cfgOpen === s.id ? 'Hide config ▲' : 'Set config ▼'}
               </button>
               <button onClick={() => exportProject(s.id, s.company)} style={{ ...label, background: 'none', border: 'none', cursor: 'pointer' }}>Export labels ↓</button>
+              <button onClick={() => genApiKey(s.id)} disabled={apiKeyLoading === s.id} style={{ ...label, background: 'none', border: 'none', cursor: 'pointer', color: '#2563EB' }}>
+                {apiKeyLoading === s.id ? 'Generating…' : 'API key ⚙'}
+              </button>
               {p.total > 0 && (
                 <select value={lsType[s.id] ?? 'eval_rating'} onChange={e => setLsType(t => ({ ...t, [s.id]: e.target.value }))} style={{ ...input, padding: '6px 8px', fontSize: 12, cursor: 'pointer' }}>
                   {LS_TASK_TYPES.map(([v, lbl]) => <option key={v} value={v} style={{ background: '#fff' }}>{lbl}</option>)}
@@ -692,6 +714,24 @@ export default function AdminPage() {
                     )}
                   </>
                 )}
+              </div>
+            )}
+
+            {apiKey[s.id] && (
+              <div style={{ marginTop: 16, padding: 16, border: '1px solid #eef0f2', borderRadius: 10, background: '#0f172a', color: '#e2e8f0' }}>
+                <p style={{ ...label, color: '#7dd3fc', marginBottom: 10 }}>API key for this project — send to the client</p>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
+                  <code style={{ fontFamily: 'Geist Mono, monospace', fontSize: 12, background: '#020617', border: '1px solid #1e293b', borderRadius: 6, padding: '8px 10px', wordBreak: 'break-all', flex: 1, minWidth: 240 }}>{apiKey[s.id]}</code>
+                  <button onClick={() => { navigator.clipboard?.writeText(apiKey[s.id]); setCopied('apikey' + s.id); setTimeout(() => setCopied(c => (c === 'apikey' + s.id ? null : c)), 1500) }} style={{ ...btn, padding: '8px 14px', fontSize: 12 }}>
+                    {copied === 'apikey' + s.id ? 'Copied ✓' : 'Copy'}
+                  </button>
+                </div>
+                <p style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11.5, color: '#94a3b8', lineHeight: 1.8 }}>
+                  Base: {API_BASE}<br />
+                  POST /ingest &nbsp;·&nbsp; body {'{'} project_id: <span style={{ color: '#7dd3fc' }}>{s.id}</span>, items: [...], webhook_url? {'}'}<br />
+                  GET&nbsp; /results?project_id=<span style={{ color: '#7dd3fc' }}>{s.id}</span><br />
+                  Auth: header <span style={{ color: '#e2e8f0' }}>Authorization: Bearer &lt;key&gt;</span>
+                </p>
               </div>
             )}
 

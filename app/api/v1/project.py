@@ -17,7 +17,7 @@ from app.services import email_service
 from app.services import audit
 from app.services import report as report_svc
 from app.services import storage
-from app.services.portal_tokens import make_token, verify_token
+from app.services.portal_tokens import make_token, make_api_key, verify_token
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/project", tags=["Project Intake"])
@@ -137,6 +137,26 @@ class EvalConfigIn(BaseModel):
 class AssignClinicianIn(BaseModel):
     project_id: str
     clinician_id: str
+
+
+class IngestIn(BaseModel):
+    project_id: str
+    items: list[dict]
+    webhook_url: str | None = None   # optional: we POST results here when the batch is delivered
+
+
+class ApiKeyIn(BaseModel):
+    project_id: str
+
+
+def _api_client_email(authorization: str | None) -> str | None:
+    """Resolve the client email from an `Authorization: Bearer <api_key>` header
+    (also accepts the bare key). Returns None if missing/invalid."""
+    if not authorization:
+        return None
+    parts = authorization.split()
+    token = parts[1] if len(parts) == 2 and parts[0].lower() == "bearer" else authorization
+    return verify_token(token)
 
 
 # ── Submit ─────────────────────────────────────────────────────────────────────
@@ -396,6 +416,104 @@ def portal_results(token: str, project_id: str):
     return {"ok": True, "company": s.get("company"), "items": rows.data or [], "report": rep}
 
 
+# ── Programmatic API (Bearer API key) ────────────────────────────────────────────
+# Same capabilities as the portal, for clients who integrate by code instead of the
+# dashboard: push items, poll status/results, and (optionally) get a webhook on delivery.
+
+@router.post("/ingest", response_model=SubmissionResponse, summary="API: push items to a project (Bearer API key)")
+def api_ingest(body: IngestIn, authorization: str | None = Header(default=None)):
+    email = _api_client_email(authorization)
+    if not email:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key.")
+    db = get_client()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable.")
+    sub = db.table("project_submissions").select("id,email,eval_config").eq("id", body.project_id).limit(1).execute()
+    if not sub.data or sub.data[0].get("email") != email:
+        raise HTTPException(status_code=403, detail="That project is not on this API key.")
+    if not body.items:
+        return SubmissionResponse(ok=True, message="No items to add.")
+    _guard_item_keys(db, body.project_id, body.items)
+
+    if body.webhook_url:
+        ec = sub.data[0].get("eval_config") or {}
+        ec["_webhook_url"] = body.webhook_url
+        db.table("project_submissions").update({"eval_config": ec}).eq("id", body.project_id).execute()
+
+    try:
+        existing = (
+            db.table("project_items").select("idx").eq("project_id", body.project_id)
+            .order("idx", desc=True).limit(1).execute()
+        )
+        start = (existing.data[0]["idx"] + 1) if existing.data else 0
+        rows = [{"project_id": body.project_id, "idx": start + i, "content": c} for i, c in enumerate(body.items)]
+        db.table("project_items").insert(rows).execute()
+    except Exception as exc:
+        logger.error("API ingest failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Could not add items.")
+    logger.info("API ingest: %d items to %s", len(body.items), body.project_id)
+    return SubmissionResponse(ok=True, message=f"Ingested {len(body.items)} items.")
+
+
+@router.get("/results", summary="API: batch status + results (Bearer API key)")
+def api_results(project_id: str, authorization: str | None = Header(default=None)):
+    email = _api_client_email(authorization)
+    if not email:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key.")
+    db = get_client()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable.")
+    sub = db.table("project_submissions").select("id,email,company,stage").eq("id", project_id).limit(1).execute()
+    if not sub.data or sub.data[0].get("email") != email:
+        raise HTTPException(status_code=403, detail="That project is not on this API key.")
+    s = sub.data[0]
+    total, done = _progress(db, project_id)
+    stage = s.get("stage") or "submitted"
+    out: dict = {"ok": True, "project_id": project_id, "status": stage, "total": total, "done": done}
+    # Poll-friendly: only 'delivered' carries the report + reviewed items; earlier
+    # stages just report status + counts so the client can loop without errors.
+    if stage == "delivered":
+        try:
+            rows = (
+                db.table("project_items").select("idx,content,label,labeled_at")
+                .eq("project_id", project_id).order("idx").execute()
+            )
+            out["items"] = rows.data or []
+            out["report"] = report_svc.build_report(db, project_id)
+        except Exception as exc:
+            logger.error("API results build failed: %s", exc)
+            out["items"] = []
+            out["report"] = None
+    return out
+
+
+def _fire_webhook(db, project_id: str) -> None:
+    """POST the delivered results to the client's registered webhook, if any.
+    Fire-and-forget: a webhook failure never blocks marking the batch delivered."""
+    try:
+        sub = db.table("project_submissions").select("eval_config,company").eq("id", project_id).limit(1).execute()
+        ec = (sub.data[0].get("eval_config") if sub.data else None) or {}
+        url = ec.get("_webhook_url")
+        if not url:
+            return
+        rows = (
+            db.table("project_items").select("idx,content,label,labeled_at")
+            .eq("project_id", project_id).order("idx").execute()
+        )
+        payload = {
+            "event": "results.delivered",
+            "project_id": project_id,
+            "company": (sub.data[0].get("company") if sub.data else None),
+            "report": report_svc.build_report(db, project_id),
+            "items": rows.data or [],
+        }
+        import httpx
+        r = httpx.post(url, json=payload, timeout=15)
+        logger.info("Webhook for %s -> %s (%s)", project_id, url, r.status_code)
+    except Exception as exc:
+        logger.error("Webhook delivery failed for %s: %s", project_id, exc)
+
+
 # ── Admin ──────────────────────────────────────────────────────────────────────
 
 def _require_admin(x_admin_key: str | None) -> None:
@@ -506,6 +624,8 @@ def admin_advance(body: AdminAdvance, x_admin_key: str | None = Header(default=N
         raise HTTPException(status_code=500, detail="Update failed.")
 
     logger.info("Project %s advanced to %s", body.submission_id, body.stage)
+    if body.stage == "delivered":
+        _fire_webhook(db, body.submission_id)   # notify the API client, if one is registered
     return SubmissionResponse(ok=True, message=f"Project advanced to {body.stage}.")
 
 
@@ -542,12 +662,35 @@ def admin_set_eval_config(body: EvalConfigIn, x_admin_key: str | None = Header(d
         ls.build_label_config(body.eval_config)
     except Exception as exc:
         raise HTTPException(status_code=422, detail=f"Invalid eval config: {exc}")
+    # Preserve a registered webhook URL — it lives in eval_config, so a plain overwrite
+    # would wipe it when the operator edits the task config.
+    new_ec = dict(body.eval_config)
     try:
-        db.table("project_submissions").update({"eval_config": body.eval_config}).eq("id", body.project_id).execute()
+        cur = db.table("project_submissions").select("eval_config").eq("id", body.project_id).limit(1).execute()
+        old_ec = (cur.data[0].get("eval_config") if cur.data else None) or {}
+        if old_ec.get("_webhook_url") and "_webhook_url" not in new_ec:
+            new_ec["_webhook_url"] = old_ec["_webhook_url"]
+    except Exception:
+        pass
+    try:
+        db.table("project_submissions").update({"eval_config": new_ec}).eq("id", body.project_id).execute()
     except Exception as exc:
         logger.error("Set eval_config failed: %s", exc)
         raise HTTPException(status_code=500, detail="Could not save the config.")
     return SubmissionResponse(ok=True, message="Config saved.")
+
+
+@router.post("/admin/api-key", summary="Generate a long-lived API key for a project's client (admin)")
+def admin_api_key(body: ApiKeyIn, x_admin_key: str | None = Header(default=None)):
+    _require_admin(x_admin_key)
+    db = get_client()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable.")
+    sub = db.table("project_submissions").select("id,email").eq("id", body.project_id).limit(1).execute()
+    if not sub.data:
+        raise HTTPException(status_code=404, detail="Project not found.")
+    key = make_api_key(sub.data[0]["email"])
+    return {"ok": True, "api_key": key, "project_id": body.project_id}
 
 
 # ── Work: items + labeling ──────────────────────────────────────────────────────
