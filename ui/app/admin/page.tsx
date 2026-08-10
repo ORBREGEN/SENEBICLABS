@@ -371,6 +371,7 @@ export default function AdminPage() {
 
   const IMAGE_TEMPLATE = JSON.stringify({
     title: 'Chest X-ray classification review',
+    reviewers_per_item: 5,
     schema: {
       input: 'image',
       classes: ['Normal', 'Pneumonia', 'Effusion'],
@@ -386,6 +387,7 @@ export default function AdminPage() {
 
   const TEXT_TEMPLATE = JSON.stringify({
     title: 'Response review',
+    reviewers_per_item: 5,
     schema: {
       input: 'text',
       context: [
@@ -695,6 +697,15 @@ export default function AdminPage() {
                         <span style={{ color: '#475569' }}>, {reportData[s.id].accuracy?.correct}/{reportData[s.id].accuracy?.assessable} correct</span>
                       )}
                     </p>
+                    {reportData[s.id].qa && (
+                      <p style={{ fontSize: 13, margin: '2px 0 4px', color: '#334155' }}>
+                        <strong>{rpct(reportData[s.id].qa.mean_agreement)}</strong> inter-reviewer agreement
+                        {' '}({reportData[s.id].qa.reviewers} reviewers/item)
+                        {reportData[s.id].qa.disagreements > 0 && (
+                          <span style={{ color: '#b45309' }}> · {reportData[s.id].qa.disagreements} to adjudicate</span>
+                        )}
+                      </p>
+                    )}
                     {Array.isArray(reportData[s.id].critical_misses) && reportData[s.id].critical_misses.length > 0 && (
                       <div style={{ marginTop: 12 }}>
                         <span style={{ ...label, color: '#b91c1c' }}>Critical misses ({reportData[s.id].critical_misses.length})</span>

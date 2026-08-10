@@ -211,6 +211,33 @@ def compute_report(items: list[dict], classes=None, case_id_field: str | None = 
                        "corrected_label; they were EXCLUDED from metrics and flagged as incomplete (see "
                        "incomplete_cases), never guessed. Complete them for accurate metrics.")
 
+    # QA / inter-reviewer agreement — present only when items were multi-reviewed.
+    qa = None
+    agrees, reviewer_counts, disagreement_cases = [], [], []
+    for it in items:
+        lbl = it.get("label") or {}
+        if lbl.get("_agreement") is None:
+            continue
+        agrees.append(lbl["_agreement"])
+        reviewer_counts.append(lbl.get("_reviewers") or 0)
+        if lbl.get("_disagreed"):
+            content = it.get("content") or {}
+            disagreement_cases.append({
+                "idx": it.get("idx"),
+                "case_id": _case_id(content, case_id_field),
+                "agreement": lbl["_agreement"],
+                "verdict": lbl.get("verdict"),
+                "reviewers": lbl.get("_reviewers"),
+            })
+    if agrees:
+        qa = {
+            "reviewers": max(reviewer_counts) if reviewer_counts else None,
+            "mean_agreement": round(sum(agrees) / len(agrees), 3),
+            "reviewed_items": len(agrees),
+            "disagreements": len(disagreement_cases),
+            "disagreement_cases": disagreement_cases,
+        }
+
     return {
         "totals": {
             "items": len(items),
@@ -218,6 +245,7 @@ def compute_report(items: list[dict], classes=None, case_id_field: str | None = 
             "excluded": excluded,
             "excluded_total": sum(excluded.values()),
         },
+        "qa": qa,
         "accuracy": {"correct": n_correct, "assessable": n_assess, "value": accuracy},
         "classes": cls_list,
         "per_class": per_class,

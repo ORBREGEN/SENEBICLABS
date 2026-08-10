@@ -73,6 +73,9 @@ Returns `{ "ok": true, "project_id": "..." }`.
   - `flag` — a single checkbox
   - `text` — free-text notes
 - Optional on any field: `required: true`, `visible_when: "field!=value"`.
+- Top-level `reviewers_per_item` (e.g. `5`) — each item is reviewed by that many
+  clinicians, combined into a consensus; the report adds inter-reviewer agreement and
+  disagreements to adjudicate. Default `1`.
 
 ---
 

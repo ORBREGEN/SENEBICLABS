@@ -220,6 +220,7 @@ function toCSV(items: ResultItem[]): string {
 }
 
 type Report = {
+  qa?: { reviewers: number | null; mean_agreement: number | null; reviewed_items: number; disagreements: number } | null
   accuracy: { correct: number; assessable: number; value: number | null }
   per_class: Record<string, { support: number; precision: number | null; recall: number | null }>
   confusion_matrix: { labels: string[]; matrix: number[][] }
@@ -275,6 +276,14 @@ function DeliveredResults({ project, token }: { project: Project; token: string 
             <span style={{ fontFamily: 'Geist, sans-serif', fontWeight: 300, fontSize: 46, lineHeight: 1, letterSpacing: '-0.02em', color: '#111' }}>{pct(acc.value)}</span>
             <span style={{ fontSize: 14, color: '#3a4655', maxWidth: 320, lineHeight: 1.5 }}>of your model&rsquo;s outputs agreed with the clinician, on {acc.assessable} reviewed cases.</span>
           </div>
+
+          {report.qa && report.qa.mean_agreement != null && (
+            <p style={{ fontSize: 13.5, color: '#3a4655', marginBottom: 22 }}>
+              Each case reviewed by <strong>{report.qa.reviewers} clinicians</strong>, with{' '}
+              <strong>{pct(report.qa.mean_agreement)}</strong> inter-reviewer agreement
+              {report.qa.disagreements > 0 && <> ({report.qa.disagreements} adjudicated)</>}.
+            </p>
+          )}
 
           <span className="micro" style={{ display: 'block', marginBottom: 8, color: '#3d5878' }}>Per-finding performance</span>
           <div style={{ overflowX: 'auto', background: '#fff', border: '1px solid #eee', borderRadius: 10, marginBottom: 22 }}>

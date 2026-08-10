@@ -6,6 +6,7 @@ POST /ls/webhook  — (Label Studio) receives annotations and writes them back t
 """
 
 import logging
+from collections import Counter
 
 import httpx
 
@@ -80,6 +81,36 @@ def _parse_result(result: list) -> dict:
     return _collapse_structured(label)
 
 
+def _consensus(labels: list[dict]) -> tuple[dict, float, bool]:
+    """Combine N reviewer labels into a majority-vote consensus, plus the agreement
+    on the primary `verdict` field (fraction of reviewers who chose the top answer)
+    and whether they disagreed (no strict majority). Structured dict fields like
+    critical_miss are voted on `present` + majority finding."""
+    n = len(labels) or 1
+    verdicts = [str(l.get("verdict")) for l in labels if l.get("verdict") is not None]
+    agreement, disagreed = 0.0, True
+    if verdicts:
+        _top, top_n = Counter(verdicts).most_common(1)[0]
+        agreement = top_n / n
+        disagreed = top_n * 2 <= n
+    consensus: dict = {}
+    keys = {k for l in labels for k in l if not k.startswith("_")}
+    for k in keys:
+        vals = [l.get(k) for l in labels if l.get(k) is not None]
+        if not vals:
+            continue
+        if all(isinstance(v, dict) for v in vals):
+            present = sum(1 for v in vals if v.get("present")) * 2 > n
+            findings = [v.get("finding") for v in vals if v.get("present") and v.get("finding")]
+            consensus[k] = {"present": present,
+                            "finding": (Counter(findings).most_common(1)[0][0] if (present and findings) else None)}
+        else:
+            by_str = {str(v): v for v in vals}          # keep original value, vote by string
+            top_key = Counter(str(v) for v in vals).most_common(1)[0][0]
+            consensus[k] = by_str[top_key]
+    return consensus, round(agreement, 3), disagreed
+
+
 @router.post("/sync", summary="Create LS project + push pending items as tasks (admin)")
 def ls_sync(body: SyncIn, x_admin_key: str | None = Header(default=None)):
     _require_admin(x_admin_key)
@@ -134,15 +165,16 @@ def ls_sync(body: SyncIn, x_admin_key: str | None = Header(default=None)):
                 ),
             )
 
+    reviewers = int((eval_config or {}).get("reviewers_per_item") or 1)   # overlap: N clinicians per item
     try:
         if not ls_pid:
             title = f"{s.get('company') or 'Senebiclabs project'} — {body.task_type}"
-            ls_pid = ls.create_project(title=title, label_config=label_config)
+            ls_pid = ls.create_project(title=title, label_config=label_config, reviewers=reviewers)
             db.table("project_submissions").update({"ls_project_id": ls_pid}).eq("id", body.project_id).execute()
         else:
             # Keep the live LS project in step with the current config, so edits made
             # in "Set config" after the first sync are actually applied.
-            ls.update_project_config(ls_pid, label_config)
+            ls.update_project_config(ls_pid, label_config, reviewers=reviewers)
         pushed = ls.push_tasks(ls_pid, rows)
     except httpx.HTTPStatusError as exc:
         logger.error("LS sync failed: %s", exc)
@@ -163,12 +195,13 @@ def ls_pull(body: PullIn, x_admin_key: str | None = Header(default=None)):
     if db is None:
         raise HTTPException(status_code=503, detail="Database unavailable.")
 
-    sub = db.table("project_submissions").select("id,ls_project_id").eq("id", body.project_id).limit(1).execute()
+    sub = db.table("project_submissions").select("id,ls_project_id,eval_config").eq("id", body.project_id).limit(1).execute()
     if not sub.data:
         raise HTTPException(status_code=404, detail="Project not found.")
     ls_pid = sub.data[0].get("ls_project_id")
     if not ls_pid:
         raise HTTPException(status_code=400, detail="This project has not been sent to Label Studio yet.")
+    reviewers_target = int((sub.data[0].get("eval_config") or {}).get("reviewers_per_item") or 1)
 
     try:
         tasks = ls.export_tasks(ls_pid)
@@ -182,20 +215,40 @@ def ls_pull(body: PullIn, x_admin_key: str | None = Header(default=None)):
         anns = t.get("annotations") or []
         if not item_id or not anns:
             continue
-        a = anns[0]
-        cb = a.get("completed_by")
-        who = cb.get("email") if isinstance(cb, dict) else "clinician"
-        parsed = _parse_result(a.get("result", []))
+        parsed = []
+        for a in anns:
+            cb = a.get("completed_by")
+            who = cb.get("email") if isinstance(cb, dict) else "clinician"
+            parsed.append({"by": who, "at": a.get("created_at"), "label": _parse_result(a.get("result", []))})
+
+        if len(parsed) == 1:
+            label = parsed[0]["label"]                      # single reviewer: shape unchanged
+        else:
+            consensus, agreement, disagreed = _consensus([p["label"] for p in parsed])
+            label = {
+                **consensus,
+                "_result": parsed[0]["label"].get("_result"),   # one raw result for export compatibility
+                "_reviewers": len(parsed),
+                "_agreement": agreement,
+                "_disagreed": disagreed,
+                "_annotations": [{"by": p["by"], "at": p["at"],
+                                  "label": {k: v for k, v in p["label"].items() if k != "_result"}}
+                                 for p in parsed],
+            }
+
+        # Done only once the target number of reviewers have weighed in.
+        done = len(parsed) >= reviewers_target
+        who_last = parsed[-1]["by"]
         try:
             db.table("project_items").update({
-                "label": parsed,
-                "status": "done",
-                "labeled_by": who,
-                "labeled_at": a.get("created_at"),
+                "label": label,
+                "status": "done" if done else "in_progress",
+                "labeled_by": who_last,
+                "labeled_at": parsed[-1]["at"],
             }).eq("id", item_id).execute()
             written += 1
             audit.record(db, item_id=item_id, project_id=body.project_id, action=audit.LABEL,
-                         actor_id=who, actor_name=who, source="label_studio", value=parsed)
+                         actor_id=who_last, actor_name=who_last, source="label_studio", value=label)
         except Exception as exc:
             logger.error("LS pull item update failed (%s): %s", item_id, exc)
 

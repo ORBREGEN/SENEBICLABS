@@ -104,6 +104,11 @@ export default function DocsPage() {
         <p style={p}>
           <code style={inlineCode}>required: true</code> and <code style={inlineCode}>visible_when: &quot;field!=value&quot;</code> are optional on any field.
         </p>
+        <p style={p}>
+          Add a top-level <code style={inlineCode}>reviewers_per_item</code> (e.g. <code style={inlineCode}>5</code>) to have each item
+          reviewed by that many clinicians. Results are combined into a consensus, and the report includes
+          inter-reviewer agreement and any disagreements to adjudicate. Default is 1.
+        </p>
       </section>
 
       {/* Ingest */}

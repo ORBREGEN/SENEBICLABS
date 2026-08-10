@@ -629,13 +629,18 @@ def required_data_keys(eval_config: dict | None) -> list[str]:
     return sorted(set(re.findall(r'value="\$(\w+)"', cfg)))
 
 
-def update_project_config(ls_project_id: int, label_config: str) -> None:
+def update_project_config(ls_project_id: int, label_config: str, reviewers: int | None = None) -> None:
     """Keep an existing LS project's labeling config in step with the current
-    eval_config, so edits made after the first sync actually take effect."""
+    eval_config, so edits made after the first sync actually take effect.
+    `reviewers` sets overlap (maximum_annotations): each task needs that many
+    independent clinician annotations before it is complete."""
+    body: dict = {"label_config": label_config}
+    if reviewers is not None and reviewers > 0:
+        body["maximum_annotations"] = int(reviewers)
     r = httpx.patch(
         f"{_base()}/api/projects/{ls_project_id}/",
         headers=_headers(),
-        json={"label_config": label_config},
+        json=body,
         timeout=30,
     )
     r.raise_for_status()
@@ -673,11 +678,14 @@ def _headers() -> dict:
     return {"Authorization": f"Token {settings.LS_TOKEN}"}
 
 
-def create_project(title: str, label_config: str = DEFAULT_LABEL_CONFIG) -> int:
+def create_project(title: str, label_config: str = DEFAULT_LABEL_CONFIG, reviewers: int = 1) -> int:
+    body: dict = {"title": title, "label_config": label_config}
+    if reviewers and reviewers > 1:
+        body["maximum_annotations"] = int(reviewers)   # overlap: N clinicians per task
     r = httpx.post(
         f"{_base()}/api/projects/",
         headers=_headers(),
-        json={"title": title, "label_config": label_config},
+        json=body,
         timeout=30,
     )
     r.raise_for_status()
