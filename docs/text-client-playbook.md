@@ -69,14 +69,17 @@ every item with the clinician's label/score/ranking, keyed to the client's id.
 
 ---
 
-## What you CAN'T do by hand (and that's OK)
-- The **automated model-performance report** (`report.py`) is imaging/classification only. For
-  text scoring/RLHF you deliver the labeled data + a spreadsheet summary. That's a fine v1.
-- The **customer portal** download is wired to the automated pipeline, not manual LS projects.
-  For a manual pilot, just email them the export. Also fine.
+## Now built (this section used to say "can't do by hand")
+The text path is automated too now, managed or self-serve, same pipeline:
+- **Self-serve ingest** — clients upload a CSV/JSON in the portal, or push by API
+  (`POST /ingest`). Each row becomes a `project_item`. See `docs/api.md`.
+- **Text scoring** — `report.py` scores verdict-style text eval (triage, safety review),
+  not just imaging. Pure RLHF/preference still delivers the labeled data, not an accuracy score.
+- **Delivery** — the portal shows the report + download for delivered projects; API clients
+  poll `GET /results` or receive a webhook on delivery.
+- **Config, assign, report, API key** — all in the `/admin` dashboard, no scripts needed.
 
-Automating text ingest + a scoring report is a real project — do it **only** when you have a
-paying text client whose actual needs define it. Building it blind = building it twice.
+So a text client no longer needs a manual, LS-only pilot.
 
 ---
 

@@ -1,8 +1,8 @@
 # Senebiclabs API
 
 Programmatic access for clients who integrate by code instead of the dashboard.
-Push items to a project, poll for status and results, and optionally receive a
-webhook when a batch is reviewed and delivered.
+Create a task, push items, poll for status and results, and optionally receive a
+webhook when a clinician-reviewed batch is delivered.
 
 **Base URL**
 
@@ -16,15 +16,70 @@ https://senebiclabs-api-777437555578.us-central1.run.app/api/v1/project
 Authorization: Bearer <YOUR_API_KEY>
 ```
 
-Your API key and `project_id` are issued by Senebiclabs (one project per engagement).
-The key is long-lived; keep it secret.
+Your API key is long-lived and tied to your account. Keep it secret. There are two
+ways to start: we set up the project and give you a `project_id` (managed), or you
+create it yourself with `POST /projects` (self-serve, §1). One key can create and
+drive many projects.
 
 ---
 
-## 1. Push items — `POST /ingest`
+## 1. Create a project (self-serve) — `POST /projects`
 
-Send a batch of items (e.g. conversations) to your project. Each item is a JSON
-object; its fields are whatever your task config expects.
+Define your own task and get back a `project_id` to push items to. Skip this if we
+set the project up for you.
+
+```bash
+curl -X POST "$BASE/projects" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Heyrafiki safety review",
+    "eval_config": {
+      "title": "Response safety review",
+      "schema": {
+        "input": "text",
+        "context": [
+          { "key": "prompt", "label": "User message" },
+          { "key": "output", "label": "Bot reply" }
+        ],
+        "classes": ["Safe", "Unsafe"],
+        "case_id_field": "case_id",
+        "fields": {
+          "verdict":       { "type": "single", "options": ["Safe", "Unsafe"], "required": true },
+          "correct_label": { "type": "from_classes", "visible_when": "verdict!=Safe" },
+          "severity":      { "type": "scale", "max": 5 },
+          "notes":         { "type": "text" }
+        }
+      }
+    },
+    "webhook_url": "https://your-app.com/hooks/senebiclabs"
+  }'
+```
+
+Returns `{ "ok": true, "project_id": "..." }`.
+
+### Config reference
+
+- `input` — `"text"` (shows the `context` fields) or `"image"` (each item needs an
+  `image` URL).
+- `context` — text mode only: which data keys to show the clinician, in order.
+- `classes` — the label set used by `from_classes` and `structured` fields.
+- `case_id_field` — which item field ties a result back to your own record.
+- `fields` — a map of what the clinician fills. Each has a `type`:
+  - `single` — choose one of `options`
+  - `from_classes` — choose one of the project `classes`
+  - `structured` — yes/no plus which finding (from classes)
+  - `scale` — a 1..`max` rating
+  - `flag` — a single checkbox
+  - `text` — free-text notes
+- Optional on any field: `required: true`, `visible_when: "field!=value"`.
+
+---
+
+## 2. Push items — `POST /ingest`
+
+Send a batch of items (e.g. conversations). Each item is a JSON object whose fields
+match your task config.
 
 ```bash
 curl -X POST "$BASE/ingest" \
@@ -40,20 +95,14 @@ curl -X POST "$BASE/ingest" \
   }'
 ```
 
-- `items` — array of objects. Fields must match the project's task config
-  (we tell you the exact fields when we set up the project).
-- `webhook_url` — optional. If set, we POST the results here when the batch is
-  delivered (see §3). Registering it once is enough; you can omit it afterward.
+- `items` — array of objects, fields must match the task config.
+- `webhook_url` — optional; if set, we POST results here on delivery (§4).
 
-Response:
-
-```json
-{ "ok": true, "message": "Ingested 2 items." }
-```
+Response: `{ "ok": true, "message": "Ingested 2 items." }`
 
 ---
 
-## 2. Poll status + results — `GET /results`
+## 3. Poll status + results — `GET /results`
 
 Clinician review is done by people, so results are not instant. Poll this endpoint;
 `status` moves through `submitted → scoping → agreement → pilot → production → delivered`.
@@ -83,19 +132,16 @@ When delivered:
               "critical_misses": [ ... ], "per_class": { ... } },
   "items": [
     { "idx": 0, "content": { "case_id": "conv_001", ... },
-      "label": { "verdict": "Correct", ... }, "labeled_at": "..." }
+      "label": { "verdict": "Safe", ... }, "labeled_at": "..." }
   ]
 }
 ```
 
-Poll every few minutes; a batch typically delivers within the agreed turnaround.
-
 ---
 
-## 3. Webhook (optional) — we call you
+## 4. Webhook (optional) — we call you
 
-If you registered a `webhook_url`, we `POST` it once when the batch is delivered,
-so you do not have to poll:
+If you registered a `webhook_url`, we `POST` it once when the batch is delivered:
 
 ```json
 {
@@ -107,17 +153,16 @@ so you do not have to poll:
 }
 ```
 
-Return `2xx` to acknowledge. It is a single fire-and-forget call for now (no
-retries), so keep polling as the source of truth if delivery is critical.
+Return `2xx` to acknowledge. Single fire-and-forget call for now (no retries), so
+keep polling as the source of truth if delivery is critical.
 
 ---
 
 ## Notes
 
 - **Errors**: `401` invalid/missing key · `403` project not on this key ·
-  `422` items missing a field the task needs · `503` service unavailable.
-- **Idempotency**: each `/ingest` call appends items; sending the same batch twice
-  creates duplicates. De-duplicate on your side or send each batch once.
-- **Content shape** is up to you as long as it matches the configured task
-  (for text review, typically `prompt` + `output`; add `case_id` to tie results
-  back to your own records).
+  `422` invalid config or items missing a required field · `503` service unavailable.
+- **Idempotency**: each `/ingest` appends items; sending the same batch twice creates
+  duplicates. De-duplicate on your side or send each batch once.
+- **Content shape** is up to you as long as it matches the configured task (for text
+  review, typically `prompt` + `output`; add `case_id` to tie results to your records).

@@ -13,7 +13,7 @@ them by hand for the first client before automating anything.
 
 | # | Who | What happens | Where |
 |---|-----|--------------|-------|
-| 1 | **Customer** | Lands on `/evaluate`, submits a project | `POST /project/submit` → `project_submissions` (stage `submitted`) |
+| 1 | **Customer** | Books a demo (homepage → `/submit` → Calendly), or an API client is set up | `POST /project/submit` → `project_submissions` (stage `submitted`) |
 | 2 | Operator | Scope the deal, advance the stage, set the project's `eval_config` (label set + fields + conditionals) | `POST /project/admin/advance`, set `eval_config` |
 | 3 | Operator | Ingest the client's images: private per-client storage, de-identified keys, signed URLs | `scripts/ingest_xray.py` → `project_items` |
 | 4 | Operator | Create reviewers and **assign** them to the project | `POST /project/admin/clinicians` + `project_clinicians` |
@@ -225,9 +225,10 @@ version removes the operator from the middle, in this priority order:
 3. **Read from the client's own bucket.** Instead of him uploading, he grants read access to
    his S3/GCS and we pull — the Scale-style intake. Matters once there is more than one client
    and transfers get painful.
-4. **Results via API / webhook.** Push delivered results back to the client's system as they
-   complete, instead of a portal download. Matters when a client wants results flowing
-   continuously into their own pipeline.
+4. ~~**Results via API / webhook.**~~ **DONE.** Clients can now integrate entirely by code:
+   `POST /projects` (self-serve task config), `POST /ingest`, `GET /results` (poll), and a
+   webhook on delivery. Long-lived Bearer API keys, issued from `/admin`. See the "API clients"
+   section below and `docs/api.md` (hosted at `senebiclabs.com/docs`).
 
 Guiding principle: match the **rigor** of the big platforms (de-id, isolation, audit, ID-keyed
 results — largely built) before their **plumbing** (buckets, APIs, self-serve consoles). The
@@ -235,12 +236,30 @@ plumbing is bought back later with revenue; the rigor is the product.
 
 ---
 
-## Conversion fix for later: soften the /submit intake
+## API clients (managed and self-serve)
 
-The public sell page (`/evaluation`) points its "Start a pilot" CTA at `/submit`. That form
-currently **requires** a detailed project description (data type, volume, timeline, budget),
-which is real friction for a cold, early-stage visitor arriving from the sell page. Leave
-`/submit` as-is for now (out of scope). When optimizing conversion, the fix is to make the
-description field **optional** (or add a 2-field "start a conversation" capture: name + email),
-so a warm-but-early buyer can raise a hand without writing a brief. Until then, the page offers
-`senebiclabs@gmail.com` as the visible low-friction secondary path.
+For clients who integrate by code instead of the dashboard (e.g. Heyrafiki). Full reference:
+`docs/api.md` / `senebiclabs.com/docs`. Base: `/api/v1/project`, auth `Authorization: Bearer <key>`.
+
+- **Issue a key** — `/admin` → a project's **API key ⚙** button, or `POST /admin/api-key`
+  with `{email}` for an account key before any project exists. The key is tied to the account
+  email; one key can create and drive many projects.
+- **Two ways to start:**
+  - *Managed* — you create + configure the project in `/admin`, hand them the `project_id`.
+  - *Self-serve* — they `POST /projects` with their own `eval_config`, get a `project_id`.
+- **Push / pull** — client `POST /ingest` (items), then `GET /results` (poll: returns
+  `status` + counts, and `report` + `items` once `delivered`) or a **webhook** on delivery.
+- **The middle is still operator-driven** — sync to Label Studio, clinicians label, pull,
+  mark delivered. The API is the client interface; you run the labeling loop (steps 4–7 below).
+- **Webhook storage** — a per-project `webhook_url` lives in `eval_config._webhook_url` and is
+  preserved across config edits; it fires when the project is advanced to `delivered`.
+
+---
+
+## Book-a-demo intake (was: "soften the /submit intake")
+
+**DONE.** The funnel is now "Book a demo": every CTA (`/`, footer, nav) points at `/submit`,
+which is a Scale-style lead form (first/last name, work email, company, job title, use case).
+On submit it saves the lead to `project_submissions` and forwards to Calendly
+(`calendly.com/senebiclabs/30min`, name + email prefilled). The old "Start a pilot" wording and
+the required detailed-brief field are gone.
