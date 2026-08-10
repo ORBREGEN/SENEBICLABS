@@ -145,8 +145,15 @@ class IngestIn(BaseModel):
     webhook_url: str | None = None   # optional: we POST results here when the batch is delivered
 
 
+class CreateProjectIn(BaseModel):
+    name: str
+    eval_config: dict                # the task schema the client defines (validated before save)
+    webhook_url: str | None = None
+
+
 class ApiKeyIn(BaseModel):
-    project_id: str
+    project_id: str | None = None    # issue a key from an existing project's email…
+    email: str | None = None         # …or directly for an account email (self-serve, no project yet)
 
 
 def _api_client_email(authorization: str | None) -> str | None:
@@ -420,6 +427,44 @@ def portal_results(token: str, project_id: str):
 # Same capabilities as the portal, for clients who integrate by code instead of the
 # dashboard: push items, poll status/results, and (optionally) get a webhook on delivery.
 
+@router.post("/projects", summary="API: create a project with your own task config (Bearer API key)")
+def api_create_project(body: CreateProjectIn, authorization: str | None = Header(default=None)):
+    """Self-serve task creation: the client defines the task schema (eval_config) and
+    creates the project by API, instead of an operator setting it up in the dashboard.
+    The project is owned by the API key's account email."""
+    email = _api_client_email(authorization)
+    if not email:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key.")
+    db = get_client()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable.")
+    # Validate the schema renders before we save it — a broken config fails here.
+    try:
+        from app.services import labelstudio as ls
+        ls.build_label_config(body.eval_config)
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"Invalid eval_config: {exc}")
+    ec = dict(body.eval_config)
+    if body.webhook_url:
+        ec["_webhook_url"] = body.webhook_url
+    try:
+        res = db.table("project_submissions").insert({
+            "name": body.name,
+            "company": body.name,
+            "email": email,
+            "description": "Created via API.",
+            "eval_config": ec,
+            "stage": "submitted",
+            "status": "new",
+        }).execute()
+        pid = res.data[0]["id"]
+    except Exception as exc:
+        logger.error("API create project failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Could not create the project.")
+    logger.info("API project created: %s (%s)", pid, email)
+    return {"ok": True, "project_id": pid}
+
+
 @router.post("/ingest", response_model=SubmissionResponse, summary="API: push items to a project (Bearer API key)")
 def api_ingest(body: IngestIn, authorization: str | None = Header(default=None)):
     email = _api_client_email(authorization)
@@ -680,17 +725,23 @@ def admin_set_eval_config(body: EvalConfigIn, x_admin_key: str | None = Header(d
     return SubmissionResponse(ok=True, message="Config saved.")
 
 
-@router.post("/admin/api-key", summary="Generate a long-lived API key for a project's client (admin)")
+@router.post("/admin/api-key", summary="Generate a long-lived API key for a client (admin)")
 def admin_api_key(body: ApiKeyIn, x_admin_key: str | None = Header(default=None)):
     _require_admin(x_admin_key)
     db = get_client()
     if db is None:
         raise HTTPException(status_code=503, detail="Database unavailable.")
-    sub = db.table("project_submissions").select("id,email").eq("id", body.project_id).limit(1).execute()
-    if not sub.data:
-        raise HTTPException(status_code=404, detail="Project not found.")
-    key = make_api_key(sub.data[0]["email"])
-    return {"ok": True, "api_key": key, "project_id": body.project_id}
+    if body.email:
+        email = body.email.strip().lower()
+    elif body.project_id:
+        sub = db.table("project_submissions").select("id,email").eq("id", body.project_id).limit(1).execute()
+        if not sub.data:
+            raise HTTPException(status_code=404, detail="Project not found.")
+        email = sub.data[0]["email"]
+    else:
+        raise HTTPException(status_code=422, detail="Provide project_id or email.")
+    # The key is tied to the account email, so one key can create and drive many projects.
+    return {"ok": True, "api_key": make_api_key(email), "email": email, "project_id": body.project_id}
 
 
 # ── Work: items + labeling ──────────────────────────────────────────────────────

@@ -47,14 +47,68 @@ export default function DocsPage() {
         <p style={{ ...p, margin: '10px 0 8px' }}>Every request carries your API key as a bearer token:</p>
         <Code>{`Authorization: Bearer <YOUR_API_KEY>`}</Code>
         <p style={p}>
-          Your API key and <code style={inlineCode}>project_id</code> are issued by Senebiclabs
-          (one project per engagement). The key is long-lived. Keep it secret.
+          Your API key is long-lived and tied to your account. Keep it secret. There are
+          two ways to start: we set up the project and give you a <code style={inlineCode}>project_id</code>
+          {' '}(managed), or you create it yourself with <code style={inlineCode}>POST /projects</code> (self-serve, below).
         </p>
       </div>
 
-      {/* Ingest */}
+      {/* Create project */}
       <section style={section}>
         <span style={eyebrow}>1</span>
+        <h2 style={h2}>Create a project <span style={{ ...eyebrow, textTransform: 'none', letterSpacing: 0, color: 'var(--slate)', fontSize: 14 }}>(self-serve)</span> <code style={{ ...inlineCode, fontSize: '0.7em' }}>POST /projects</code></h2>
+        <p style={p}>
+          Define your own task and get back a <code style={inlineCode}>project_id</code> to push items to.
+          Skip this if we set the project up for you.
+        </p>
+        <Code>{`curl -X POST "$BASE/projects" \\
+  -H "Authorization: Bearer $API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "name": "Heyrafiki safety review",
+    "eval_config": {
+      "title": "Response safety review",
+      "schema": {
+        "input": "text",
+        "context": [
+          { "key": "prompt", "label": "User message" },
+          { "key": "output", "label": "Bot reply" }
+        ],
+        "classes": ["Safe", "Unsafe"],
+        "case_id_field": "case_id",
+        "fields": {
+          "verdict":       { "type": "single", "options": ["Safe", "Unsafe"], "required": true },
+          "correct_label": { "type": "from_classes", "visible_when": "verdict!=Safe" },
+          "severity":      { "type": "scale", "max": 5 },
+          "notes":         { "type": "text" }
+        }
+      }
+    },
+    "webhook_url": "https://your-app.com/hooks/senebiclabs"
+  }'`}</Code>
+        <p style={p}>Returns <code style={inlineCode}>{`{ "ok": true, "project_id": "..." }`}</code>. Then push items to it (below).</p>
+        <h3 style={h3}>Config reference</h3>
+        <p style={p}>
+          <code style={inlineCode}>input</code>: <code style={inlineCode}>&quot;text&quot;</code> (shows the <code style={inlineCode}>context</code> fields) or
+          {' '}<code style={inlineCode}>&quot;image&quot;</code> (each item needs an <code style={inlineCode}>image</code> URL).
+          {' '}<code style={inlineCode}>fields</code> is a map of what the clinician fills; each has a <code style={inlineCode}>type</code>:
+        </p>
+        <ul style={{ ...p, paddingLeft: 20 }}>
+          <li><code style={inlineCode}>single</code> — choose one of <code style={inlineCode}>options</code></li>
+          <li><code style={inlineCode}>from_classes</code> — choose one of the project <code style={inlineCode}>classes</code></li>
+          <li><code style={inlineCode}>structured</code> — yes/no plus which finding (from classes)</li>
+          <li><code style={inlineCode}>scale</code> — a 1..<code style={inlineCode}>max</code> rating</li>
+          <li><code style={inlineCode}>flag</code> — a single checkbox</li>
+          <li><code style={inlineCode}>text</code> — free-text notes</li>
+        </ul>
+        <p style={p}>
+          <code style={inlineCode}>required: true</code> and <code style={inlineCode}>visible_when: &quot;field!=value&quot;</code> are optional on any field.
+        </p>
+      </section>
+
+      {/* Ingest */}
+      <section style={section}>
+        <span style={eyebrow}>2</span>
         <h2 style={h2}>Push items <code style={{ ...inlineCode, fontSize: '0.7em' }}>POST /ingest</code></h2>
         <p style={p}>
           Send a batch of items (for example, conversations). Each item is a JSON object whose
@@ -81,7 +135,7 @@ export default function DocsPage() {
 
       {/* Results */}
       <section style={section}>
-        <span style={eyebrow}>2</span>
+        <span style={eyebrow}>3</span>
         <h2 style={h2}>Poll status and results <code style={{ ...inlineCode, fontSize: '0.7em' }}>GET /results</code></h2>
         <p style={p}>
           Clinician review is done by people, so results are not instant. Poll this endpoint.
@@ -114,7 +168,7 @@ export default function DocsPage() {
 
       {/* Webhook */}
       <section style={section}>
-        <span style={eyebrow}>3</span>
+        <span style={eyebrow}>4</span>
         <h2 style={h2}>Webhook <span style={{ ...eyebrow, textTransform: 'none', letterSpacing: 0, color: 'var(--slate)', fontSize: 14 }}>(optional)</span></h2>
         <p style={p}>
           If you registered a <code style={inlineCode}>webhook_url</code>, we POST it once when the
