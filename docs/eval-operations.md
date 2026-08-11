@@ -249,8 +249,13 @@ For clients who integrate by code instead of the dashboard (e.g. Heyrafiki). Ful
   - *Self-serve* — they `POST /projects` with their own `eval_config`, get a `project_id`.
 - **Push / pull** — client `POST /ingest` (items), then `GET /results` (poll: returns
   `status` + counts, and `report` + `items` once `delivered`) or a **webhook** on delivery.
-- **The middle is still operator-driven** — sync to Label Studio, clinicians label, pull,
-  mark delivered. The API is the client interface; you run the labeling loop (steps 4–7 below).
+- **The middle is automated for API clients.** Ingest **auto-syncs** the new items to Label
+  Studio (creates the project from config, registers the LS webhook, pushes only the new
+  items). As clinicians annotate, the LS webhook **auto-pulls** each annotation (multi-reviewer
+  aware: consensus + agreement, done only at N reviewers). When the last item completes the
+  project **auto-delivers** and fires the client webhook. The only manual setup is: create the
+  project (or the client self-serves via `POST /projects`) and **assign clinicians once**.
+  Dashboard-run projects still use the manual buttons (steps 4–7 below).
 - **Webhook storage** — a per-project `webhook_url` lives in `eval_config._webhook_url` and is
   preserved across config edits; it fires when the project is advanced to `delivered`.
 
