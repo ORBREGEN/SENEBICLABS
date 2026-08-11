@@ -492,10 +492,20 @@ def api_ingest(body: IngestIn, authorization: str | None = Header(default=None))
         )
         start = (existing.data[0]["idx"] + 1) if existing.data else 0
         rows = [{"project_id": body.project_id, "idx": start + i, "content": c} for i, c in enumerate(body.items)]
-        db.table("project_items").insert(rows).execute()
+        inserted = db.table("project_items").insert(rows).execute().data or []
     except Exception as exc:
         logger.error("API ingest failed: %s", exc)
         raise HTTPException(status_code=500, detail="Could not add items.")
+
+    # Auto-sync: push just these new items to Label Studio so clinicians can start with
+    # no operator click. Best-effort — a sync failure (e.g. config not set yet) never
+    # fails the ingest; the operator can sync manually.
+    try:
+        from app.api.v1.ls import push_new_items
+        push_new_items(db, body.project_id, [{"id": r["id"], "content": r.get("content")} for r in inserted if r.get("id")])
+    except Exception as exc:
+        logger.warning("Auto-sync after ingest skipped for %s: %s", body.project_id, exc)
+
     logger.info("API ingest: %d items to %s", len(body.items), body.project_id)
     return SubmissionResponse(ok=True, message=f"Ingested {len(body.items)} items.")
 

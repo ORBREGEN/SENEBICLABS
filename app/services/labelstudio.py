@@ -678,6 +678,25 @@ def _headers() -> dict:
     return {"Authorization": f"Token {settings.LS_TOKEN}"}
 
 
+def _register_webhook(ls_project_id: int) -> None:
+    """Point Label Studio at our /ls/webhook for this project, so annotations flow back
+    automatically as clinicians create them (auto-pull). Best-effort; manual pull is the
+    fallback if this fails."""
+    url = getattr(settings, "LS_CALLBACK_URL", None) or \
+        "https://senebiclabs-api-777437555578.us-central1.run.app/api/v1/ls/webhook"
+    hdrs = {"X-Ls-Secret": settings.LS_WEBHOOK_SECRET} if settings.LS_WEBHOOK_SECRET else {}
+    try:
+        httpx.post(
+            f"{_base()}/api/webhooks/",
+            headers=_headers(),
+            json={"project": ls_project_id, "url": url, "send_for_all_actions": False,
+                  "actions": ["ANNOTATION_CREATED", "ANNOTATION_UPDATED"], "headers": hdrs, "is_active": True},
+            timeout=30,
+        )
+    except Exception:
+        pass
+
+
 def create_project(title: str, label_config: str = DEFAULT_LABEL_CONFIG, reviewers: int = 1) -> int:
     body: dict = {"title": title, "label_config": label_config}
     if reviewers and reviewers > 1:
@@ -689,7 +708,9 @@ def create_project(title: str, label_config: str = DEFAULT_LABEL_CONFIG, reviewe
         timeout=30,
     )
     r.raise_for_status()
-    return r.json()["id"]
+    pid = r.json()["id"]
+    _register_webhook(pid)                              # auto-pull annotations as they land
+    return pid
 
 
 def push_tasks(ls_project_id: int, items: list[dict]) -> int:

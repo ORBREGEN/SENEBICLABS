@@ -111,6 +111,108 @@ def _consensus(labels: list[dict]) -> tuple[dict, float, bool]:
     return consensus, round(agreement, 3), disagreed
 
 
+def _apply_task_annotations(db, task: dict, reviewers_target: int, project_id: str | None) -> bool | None:
+    """Write an LS task's annotations to its item: for one reviewer the label is stored
+    as-is; for many, a majority consensus + agreement is stored. The item is `done` only
+    once `reviewers_target` reviewers are in. Returns done (bool), or None if skipped.
+    Shared by the manual pull and the live webhook so both handle overlap identically."""
+    item_id = (task.get("data") or {}).get("_item_id")
+    anns = task.get("annotations") or []
+    if not item_id or not anns:
+        return None
+    parsed = []
+    for a in anns:
+        cb = a.get("completed_by")
+        who = cb.get("email") if isinstance(cb, dict) else (a.get("created_username") or "clinician")
+        parsed.append({"by": who, "at": a.get("created_at") or a.get("updated_at"),
+                       "label": _parse_result(a.get("result", []))})
+    if len(parsed) == 1:
+        label = parsed[0]["label"]
+    else:
+        consensus, agreement, disagreed = _consensus([p["label"] for p in parsed])
+        label = {
+            **consensus,
+            "_result": parsed[0]["label"].get("_result"),
+            "_reviewers": len(parsed),
+            "_agreement": agreement,
+            "_disagreed": disagreed,
+            "_annotations": [{"by": p["by"], "at": p["at"],
+                              "label": {k: v for k, v in p["label"].items() if k != "_result"}}
+                             for p in parsed],
+        }
+    done = len(parsed) >= reviewers_target
+    db.table("project_items").update({
+        "label": label,
+        "status": "done" if done else "in_progress",
+        "labeled_by": parsed[-1]["by"],
+        "labeled_at": parsed[-1]["at"],
+    }).eq("id", item_id).execute()
+    audit.record(db, item_id=item_id, project_id=project_id, action=audit.LABEL,
+                 actor_id=parsed[-1]["by"], actor_name=parsed[-1]["by"], source="label_studio", value=label)
+    return done
+
+
+def _reviewers_target(db, project_id: str | None) -> int:
+    if not project_id:
+        return 1
+    try:
+        sub = db.table("project_submissions").select("eval_config").eq("id", project_id).limit(1).execute()
+        return int(((sub.data[0].get("eval_config") if sub.data else None) or {}).get("reviewers_per_item") or 1)
+    except Exception:
+        return 1
+
+
+def _maybe_auto_deliver(db, project_id: str) -> None:
+    """When every item in a project is done, flip it to `delivered` and fire the client
+    webhook, with no operator action. No-op if already delivered or items remain."""
+    try:
+        sub = db.table("project_submissions").select("stage").eq("id", project_id).limit(1).execute()
+        if sub.data and sub.data[0].get("stage") == "delivered":
+            return
+        rows = db.table("project_items").select("status").eq("project_id", project_id).execute().data or []
+        if not rows or any(r.get("status") != "done" for r in rows):
+            return
+        from datetime import datetime, timezone
+        db.table("project_submissions").update(
+            {"stage": "delivered", "updated_at": datetime.now(timezone.utc).isoformat()}
+        ).eq("id", project_id).execute()
+        logger.info("Auto-delivered project %s (all items complete)", project_id)
+        from app.api.v1.project import _fire_webhook   # lazy: avoid circular import
+        _fire_webhook(db, project_id)
+    except Exception as exc:
+        logger.error("Auto-deliver failed for %s: %s", project_id, exc)
+
+
+def push_new_items(db, project_id: str, items: list[dict], task_type: str = "eval_rating") -> dict:
+    """Auto-sync: ensure the LS project exists (built from the project's config) and push
+    exactly these newly-ingested items, so clinicians can start without an operator click.
+    Pushes only the given items, so repeated ingests never duplicate tasks."""
+    if not items:
+        return {"pushed": 0}
+    sub = db.table("project_submissions").select("id,company,ls_project_id,eval_config").eq("id", project_id).limit(1).execute()
+    if not sub.data:
+        raise ValueError("project not found")
+    s = sub.data[0]
+    eval_config = s.get("eval_config")
+    if not eval_config:
+        raise ValueError("no eval_config yet")     # unconfigured project: skip, operator syncs later
+    label_config = ls.build_label_config(eval_config)
+    for k in ls.required_data_keys(eval_config):
+        if any(not (r.get("content") or {}).get(k) for r in items):
+            raise ValueError(f"items missing '{k}'")
+    reviewers = int(eval_config.get("reviewers_per_item") or 1)
+    ls_pid = s.get("ls_project_id")
+    if not ls_pid:
+        title = f"{s.get('company') or 'Senebiclabs project'} — {task_type}"
+        ls_pid = ls.create_project(title=title, label_config=label_config, reviewers=reviewers)
+        db.table("project_submissions").update({"ls_project_id": ls_pid}).eq("id", project_id).execute()
+    else:
+        ls.update_project_config(ls_pid, label_config, reviewers=reviewers)
+    pushed = ls.push_tasks(ls_pid, items)
+    logger.info("Auto-sync pushed %d new items to LS project %s", pushed, ls_pid)
+    return {"ls_project_id": ls_pid, "pushed": pushed}
+
+
 @router.post("/sync", summary="Create LS project + push pending items as tasks (admin)")
 def ls_sync(body: SyncIn, x_admin_key: str | None = Header(default=None)):
     _require_admin(x_admin_key)
@@ -211,46 +313,11 @@ def ls_pull(body: PullIn, x_admin_key: str | None = Header(default=None)):
 
     written = 0
     for t in tasks:
-        item_id = (t.get("data") or {}).get("_item_id")
-        anns = t.get("annotations") or []
-        if not item_id or not anns:
-            continue
-        parsed = []
-        for a in anns:
-            cb = a.get("completed_by")
-            who = cb.get("email") if isinstance(cb, dict) else "clinician"
-            parsed.append({"by": who, "at": a.get("created_at"), "label": _parse_result(a.get("result", []))})
-
-        if len(parsed) == 1:
-            label = parsed[0]["label"]                      # single reviewer: shape unchanged
-        else:
-            consensus, agreement, disagreed = _consensus([p["label"] for p in parsed])
-            label = {
-                **consensus,
-                "_result": parsed[0]["label"].get("_result"),   # one raw result for export compatibility
-                "_reviewers": len(parsed),
-                "_agreement": agreement,
-                "_disagreed": disagreed,
-                "_annotations": [{"by": p["by"], "at": p["at"],
-                                  "label": {k: v for k, v in p["label"].items() if k != "_result"}}
-                                 for p in parsed],
-            }
-
-        # Done only once the target number of reviewers have weighed in.
-        done = len(parsed) >= reviewers_target
-        who_last = parsed[-1]["by"]
         try:
-            db.table("project_items").update({
-                "label": label,
-                "status": "done" if done else "in_progress",
-                "labeled_by": who_last,
-                "labeled_at": parsed[-1]["at"],
-            }).eq("id", item_id).execute()
-            written += 1
-            audit.record(db, item_id=item_id, project_id=body.project_id, action=audit.LABEL,
-                         actor_id=who_last, actor_name=who_last, source="label_studio", value=label)
+            if _apply_task_annotations(db, t, reviewers_target, body.project_id) is not None:
+                written += 1
         except Exception as exc:
-            logger.error("LS pull item update failed (%s): %s", item_id, exc)
+            logger.error("LS pull item update failed: %s", exc)
 
     return {"ok": True, "pulled": written}
 
@@ -265,42 +332,36 @@ async def ls_webhook(req: Request, x_ls_secret: str | None = Header(default=None
 
     ann = body.get("annotation") or {}
     task_ref = ann.get("task")
-    try:
-        task = ls.get_task(task_ref) if isinstance(task_ref, int) else (task_ref or {})
-        item_id = (task.get("data") or {}).get("_item_id")
-    except Exception as exc:
-        logger.error("LS webhook task fetch failed: %s", exc)
-        return {"ok": False}
-    if not item_id:
+    task_id = task_ref if isinstance(task_ref, int) else (task_ref or {}).get("id")
+    if not task_id:
         return {"ok": True}
-
-    # Generic parse (same path as /ls/pull): flatten by field name, keep the raw result
-    # list, and collapse structured fields (e.g. critical_miss) into one object.
-    label = _parse_result(ann.get("result", []))
 
     db = get_client()
     if db is None:
         return {"ok": False}
-    who = ann.get("created_username") or "label-studio"
+    # Re-fetch the whole task so we see ALL annotations (multi-reviewer), not just this one.
     try:
-        db.table("project_items").update(
-            {
-                "label": label,
-                "status": "done",
-                "labeled_by": who,
-                "labeled_at": ann.get("created_at"),
-            }
-        ).eq("id", item_id).execute()
+        task = ls.get_task(task_id)
     except Exception as exc:
-        logger.error("LS webhook update failed: %s", exc)
+        logger.error("LS webhook task fetch failed: %s", exc)
         return {"ok": False}
+    item_id = (task.get("data") or {}).get("_item_id")
+    if not item_id:
+        return {"ok": True}
 
-    # Audit needs the project id; the item carries it. Best-effort, never blocks the webhook.
     try:
         pr = db.table("project_items").select("project_id").eq("id", item_id).limit(1).execute()
         project_id = pr.data[0]["project_id"] if pr.data else None
     except Exception:
         project_id = None
-    audit.record(db, item_id=item_id, project_id=project_id, action=audit.LABEL,
-                 actor_id=who, actor_name=who, source="label_studio", value=label)
+
+    try:
+        done = _apply_task_annotations(db, task, _reviewers_target(db, project_id), project_id)
+    except Exception as exc:
+        logger.error("LS webhook apply failed: %s", exc)
+        return {"ok": False}
+
+    # Auto-deliver: when this item completing means the whole batch is done, publish it.
+    if done and project_id:
+        _maybe_auto_deliver(db, project_id)
     return {"ok": True}
