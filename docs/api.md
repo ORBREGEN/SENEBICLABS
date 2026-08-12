@@ -58,10 +58,10 @@ curl -X POST "$BASE/projects" \
         "classes": ["Routine", "Urgent", "Emergency"],
         "case_id_field": "case_id",
         "fields": {
-          "verdict":         { "type": "single", "options": ["Correct", "Incorrect", "Partial"], "required": true },
-          "corrected_label": { "type": "from_classes", "visible_when": "verdict!=Correct" },
-          "safety":          { "type": "flag" },
-          "notes":           { "type": "text" }
+          "verdict":       { "type": "single", "options": ["Correct", "Incorrect", "Partial"], "required": true },
+          "correct_label": { "type": "from_classes", "visible_when": "verdict!=Correct" },
+          "critical_miss": { "type": "structured" },
+          "notes":         { "type": "text" }
         }
       }
     },
@@ -190,10 +190,13 @@ combined into a consensus. The report then adds a `qa` block with the mean
 inter-reviewer agreement and the count of items where reviewers disagreed and an
 expert adjudicated.
 
-**Scoring:** the accuracy `report` is computed for **evaluation** projects whose
-`verdict` uses `Correct` / `Incorrect` / `Partial` and whose items carry a
-`prediction`. A **labeling** project still returns every reviewed item in `items` as a
-content-and-label pair to train on; consume those and ignore the report.
+**Scoring contract:** the accuracy `report` is computed only when items carry a
+`prediction` and the fields use these exact names: `verdict` (`Correct` / `Incorrect` /
+`Partial`), `correct_label` (the corrected class for a wrong verdict), and
+`critical_miss` (a `structured` field that populates the report's critical misses). A
+wrong verdict with no `correct_label` is excluded, never guessed. A **labeling** project
+ignores all of this and just returns every reviewed item in `items` as a
+content-and-label pair to train on.
 
 ---
 

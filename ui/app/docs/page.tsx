@@ -108,10 +108,10 @@ export default function DocsPage() {
         "classes": ["Routine", "Urgent", "Emergency"],
         "case_id_field": "case_id",
         "fields": {
-          "verdict":         { "type": "single", "options": ["Correct", "Incorrect", "Partial"], "required": true },
-          "corrected_label": { "type": "from_classes", "visible_when": "verdict!=Correct" },
-          "safety":          { "type": "flag" },
-          "notes":           { "type": "text" }
+          "verdict":       { "type": "single", "options": ["Correct", "Incorrect", "Partial"], "required": true },
+          "correct_label": { "type": "from_classes", "visible_when": "verdict!=Correct" },
+          "critical_miss": { "type": "structured" },
+          "notes":         { "type": "text" }
         }
       }
     },
@@ -219,10 +219,13 @@ export default function DocsPage() {
           </p>
           <div className="docs-callout">
             <p>
-              <b>Scoring:</b> the accuracy <C>report</C> is computed for <b>evaluation</b> projects whose
-              <C>verdict</C> uses <C>Correct</C> / <C>Incorrect</C> / <C>Partial</C> and whose items carry a
-              <C>prediction</C>. A <b>labeling</b> project still returns every reviewed item in <C>items</C>
-              as a content-and-label pair to train on; consume those and ignore the report.
+              <b>Scoring contract:</b> the accuracy <C>report</C> is computed only when items carry a
+              <C>prediction</C> and the fields use these exact names: <C>verdict</C> (<C>Correct</C> /{' '}
+              <C>Incorrect</C> / <C>Partial</C>), <C>correct_label</C> (the corrected class for a wrong
+              verdict), and <C>critical_miss</C> (a <C>structured</C> field that populates the report&rsquo;s
+              critical misses). A wrong verdict with no <C>correct_label</C> is excluded, never guessed. A
+              <b>labeling</b> project ignores all of this and just returns every reviewed item in <C>items</C>
+              as a content-and-label pair to train on.
             </p>
           </div>
         </section>
