@@ -5,6 +5,7 @@ const NAV = {
     { label: 'What we do', href: '/#what-you-get' },
     { label: 'Modalities', href: '/#modalities' },
     { label: 'API docs', href: '/docs' },
+    { label: 'Get an API key', href: '/developers' },
     { label: 'Book a demo', href: '/submit' },
   ],
   company: [

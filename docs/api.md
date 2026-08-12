@@ -28,10 +28,13 @@ https://senebiclabs-api-777437555578.us-central1.run.app/api/v1/project
 Authorization: Bearer <YOUR_API_KEY>
 ```
 
-Your API key is long-lived and tied to your account. Keep it secret. There are two
-ways to start: we set up the project and give you a `project_id` (managed), or you
-create it yourself with `POST /projects` (self-serve, §1). One key can create and
-drive many projects.
+**Get your key** at https://senebiclabs.com/developers — verify your email and create
+one in seconds. Keys are shown once, tied to your account, and revocable there at any
+time. Keep it secret.
+
+Then, two ways to start a project: we set it up and give you a `project_id` (managed),
+or you create it yourself with `POST /projects` (self-serve, §1). One key can create
+and drive many projects.
 
 ---
 

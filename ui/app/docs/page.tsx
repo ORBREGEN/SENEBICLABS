@@ -72,10 +72,14 @@ export default function DocsPage() {
           <p>Every request carries your API key as a bearer token:</p>
           <Code>{`Authorization: Bearer <YOUR_API_KEY>`}</Code>
           <p>
-            Your key is long-lived and tied to your account. Keep it secret. There are two
-            ways to start: we set up the project and give you a <C>project_id</C> (managed),
-            or you create it yourself with <C>POST /projects</C> (self-serve, below). One key
-            can create and drive many projects.
+            <b>Get your key</b> at <a href="/developers" style={{ color: '#fff' }}>senebiclabs.com/developers</a>:
+            verify your email and create one in seconds. Keys are shown once, tied to your account, and you
+            can revoke any of them there at any time.
+          </p>
+          <p>
+            Then, two ways to start a project: we set it up and give you a <C>project_id</C> (managed), or you
+            create it yourself with <C>POST /projects</C> (self-serve, below). One key can create and drive
+            many projects.
           </p>
         </section>
 

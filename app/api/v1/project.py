@@ -159,14 +159,34 @@ class ApiKeyIn(BaseModel):
     email: str | None = None         # …or directly for an account email (self-serve, no project yet)
 
 
+class DevLinkIn(BaseModel):
+    email: EmailStr                  # self-serve: email a sign-in link to the developer console
+
+
+class KeyCreateIn(BaseModel):
+    token: str                       # the magic-link token that proves the email
+    label: str | None = None         # optional human label ("production", "staging")
+
+
+class KeyRevokeIn(BaseModel):
+    token: str
+    key_id: str
+
+
 def _api_client_email(authorization: str | None) -> str | None:
     """Resolve the client email from an `Authorization: Bearer <api_key>` header
-    (also accepts the bare key). Returns None if missing/invalid."""
+    (also accepts the bare key). Returns None if missing, invalid, or revoked."""
     if not authorization:
         return None
     parts = authorization.split()
     token = parts[1] if len(parts) == 2 and parts[0].lower() == "bearer" else authorization
-    return verify_token(token)
+    email = verify_token(token)
+    if not email:
+        return None
+    from app.services import api_keys
+    if api_keys.is_revoked(get_client(), token):
+        return None
+    return email
 
 
 # ── Submit ─────────────────────────────────────────────────────────────────────
@@ -424,6 +444,72 @@ def portal_results(token: str, project_id: str):
         logger.error("Portal report build failed: %s", exc)
         rep = None
     return {"ok": True, "company": s.get("company"), "items": rows.data or [], "report": rep}
+
+
+# ── Self-serve API keys (magic-link verified) ────────────────────────────────────
+# A developer verifies their email via a magic link, then creates/lists/revokes
+# their own API keys — no operator in the loop. Keys are revocable (see api_keys).
+
+@router.post("/portal/dev-link", response_model=SubmissionResponse, summary="Email a sign-in link to the developer console")
+def portal_dev_link(body: DevLinkIn):
+    email = body.email.strip().lower()
+    link = f"{settings.SITE_URL.rstrip('/')}/developers?token={make_token(email)}"
+    try:
+        email_service.send_portal_link(email=email, link=link)
+        logger.info("Developer sign-in link sent to %s", email)
+    except Exception as exc:
+        logger.error("Dev-link send failed for %s: %s", email, exc)
+    # Never reveal whether the send succeeded — same anti-enumeration posture as the portal.
+    return SubmissionResponse(ok=True, message="Check your email for a sign-in link.")
+
+
+@router.get("/portal/keys", summary="List the account's API keys (magic-link token)")
+def portal_list_keys(token: str):
+    email = verify_token(token)
+    if not email:
+        raise HTTPException(status_code=401, detail="This session has expired. Request a new sign-in link.")
+    db = get_client()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Temporarily unavailable. Please try again shortly.")
+    from app.services import api_keys
+    try:
+        keys = api_keys.list_for(db, email)
+    except Exception as exc:
+        logger.error("List keys failed for %s: %s", email, exc)
+        keys = []
+    return {"ok": True, "email": email, "keys": keys}
+
+
+@router.post("/portal/keys", summary="Create a new API key (magic-link token)")
+def portal_create_key(body: KeyCreateIn):
+    email = verify_token(body.token)
+    if not email:
+        raise HTTPException(status_code=401, detail="This session has expired. Request a new sign-in link.")
+    db = get_client()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Temporarily unavailable. Please try again shortly.")
+    from app.services import api_keys
+    try:
+        out = api_keys.create(db, email, body.label)
+    except Exception as exc:
+        logger.error("Create key failed for %s: %s", email, exc)
+        raise HTTPException(status_code=500, detail="Could not create the key. Please try again.")
+    # api_key is returned once here and never again — the client must copy it now.
+    return {"ok": True, **out}
+
+
+@router.post("/portal/keys/revoke", response_model=SubmissionResponse, summary="Revoke an API key (magic-link token)")
+def portal_revoke_key(body: KeyRevokeIn):
+    email = verify_token(body.token)
+    if not email:
+        raise HTTPException(status_code=401, detail="This session has expired. Request a new sign-in link.")
+    db = get_client()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Temporarily unavailable. Please try again shortly.")
+    from app.services import api_keys
+    if not api_keys.revoke(db, email, body.key_id):
+        raise HTTPException(status_code=404, detail="Key not found on this account.")
+    return SubmissionResponse(ok=True, message="Key revoked. It can no longer be used.")
 
 
 # ── Programmatic API (Bearer API key) ────────────────────────────────────────────
@@ -788,7 +874,10 @@ def admin_api_key(body: ApiKeyIn, x_admin_key: str | None = Header(default=None)
     else:
         raise HTTPException(status_code=422, detail="Provide project_id or email.")
     # The key is tied to the account email, so one key can create and drive many projects.
-    return {"ok": True, "api_key": make_api_key(email), "email": email, "project_id": body.project_id}
+    key = make_api_key(email)
+    from app.services import api_keys
+    api_keys.record(db, email, key, label="Issued by operator")   # make it revocable + listed
+    return {"ok": True, "api_key": key, "email": email, "project_id": body.project_id}
 
 
 # ── Work: items + labeling ──────────────────────────────────────────────────────
