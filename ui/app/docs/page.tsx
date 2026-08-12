@@ -5,7 +5,8 @@ export const metadata: Metadata = {
   title: 'API · Senebiclabs',
   description:
     'Senebiclabs API: create a project, push items, poll status and results, and receive a signed webhook when a clinician-reviewed batch is delivered.',
-  robots: { index: false },
+  robots: { index: true, follow: true },
+  alternates: { canonical: 'https://senebiclabs.com/docs' },
 }
 
 const BASE = 'https://senebiclabs-api-777437555578.us-central1.run.app/api/v1/project'
