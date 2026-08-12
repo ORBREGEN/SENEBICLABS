@@ -53,6 +53,13 @@ export default function DocsPage() {
             optionally receive a signed webhook when a clinician-reviewed batch is delivered.
           </p>
 
+          <p>Two kinds of project run on the same pipeline; your task config decides which:</p>
+          <ul>
+            <li><b>Evaluation:</b> each item carries a model output. Clinicians grade it, and results include an accuracy and safety scorecard.</li>
+            <li><b>Labeling:</b> each item carries raw data. Clinicians apply your label schema, and results come back as clean content-and-label pairs to train on.</li>
+          </ul>
+          <p>The only difference is your task config and whether there is a model output to grade.</p>
+
           <h3>Base URL</h3>
           <Code>{BASE}</Code>
         </section>
@@ -87,23 +94,23 @@ export default function DocsPage() {
   -H "Authorization: Bearer $API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "name": "Heyrafiki safety review",
+    "name": "Clinical response evaluation",
     "eval_config": {
-      "title": "Response safety review",
-      "reviewers_per_item": 5,
+      "title": "Clinical response review",
+      "reviewers_per_item": 3,
       "schema": {
         "input": "text",
         "context": [
-          { "key": "prompt", "label": "User message" },
-          { "key": "output", "label": "Bot reply" }
+          { "key": "scenario",   "label": "Patient message" },
+          { "key": "prediction", "label": "Model response" }
         ],
-        "classes": ["Safe", "Unsafe"],
+        "classes": ["Routine", "Urgent", "Emergency"],
         "case_id_field": "case_id",
         "fields": {
-          "verdict":       { "type": "single", "options": ["Safe", "Unsafe"], "required": true },
-          "correct_label": { "type": "from_classes", "visible_when": "verdict!=Safe" },
-          "severity":      { "type": "scale", "max": 5 },
-          "notes":         { "type": "text" }
+          "verdict":         { "type": "single", "options": ["Correct", "Incorrect", "Partial"], "required": true },
+          "corrected_label": { "type": "from_classes", "visible_when": "verdict!=Correct" },
+          "safety":          { "type": "flag" },
+          "notes":           { "type": "text" }
         }
       }
     },
@@ -119,6 +126,13 @@ export default function DocsPage() {
             <b>Save the <C>webhook_secret</C>.</b> It is returned once, only when you register
             a <C>webhook_url</C>, and is used to verify webhook authenticity (see{' '}
             <a href="#webhooks" style={{ color: '#fff' }}>Webhooks</a>). Treat it like a password.
+          </p>
+          <p>
+            This example is an <b>evaluation</b> project: each item carries a <C>prediction</C>,
+            clinicians return a <C>verdict</C> of <C>Correct</C>, <C>Incorrect</C>, or <C>Partial</C>,
+            and the report scores accuracy. For a <b>labeling</b> project, omit <C>prediction</C> and set
+            <C>fields</C> to the labels you want produced; the results come back as content-and-label
+            pairs with no scorecard.
           </p>
         </section>
 
@@ -141,8 +155,8 @@ export default function DocsPage() {
   -d '{
     "project_id": "YOUR_PROJECT_ID",
     "items": [
-      { "case_id": "conv_001", "prompt": "user message...", "output": "bot reply..." },
-      { "case_id": "conv_002", "prompt": "user message...", "output": "bot reply..." }
+      { "case_id": "case_001", "scenario": "patient message...", "prediction": "Routine" },
+      { "case_id": "case_002", "scenario": "patient message...", "prediction": "Urgent" }
     ]
   }'`}</Code>
           <h3>Idempotency</h3>
@@ -192,8 +206,8 @@ export default function DocsPage() {
     "qa": { "mean_agreement": 0.86, "reviewers": 5, "disagreements": 12 }
   },
   "items": [
-    { "idx": 0, "content": { "case_id": "conv_001", ... },
-      "label": { "verdict": "Safe", ... }, "labeled_at": "..." }
+    { "idx": 0, "content": { "case_id": "case_001", ... },
+      "label": { "verdict": "Correct", ... }, "labeled_at": "..." }
   ]
 }`}</Code>
           <p>
@@ -202,6 +216,14 @@ export default function DocsPage() {
             inter-reviewer agreement and the count of items where reviewers disagreed and an
             expert adjudicated.
           </p>
+          <div className="docs-callout">
+            <p>
+              <b>Scoring:</b> the accuracy <C>report</C> is computed for <b>evaluation</b> projects whose
+              <C>verdict</C> uses <C>Correct</C> / <C>Incorrect</C> / <C>Partial</C> and whose items carry a
+              <C>prediction</C>. A <b>labeling</b> project still returns every reviewed item in <C>items</C>
+              as a content-and-label pair to train on; consume those and ignore the report.
+            </p>
+          </div>
         </section>
 
         {/* Webhooks */}

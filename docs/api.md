@@ -7,6 +7,15 @@ Create a project, push items, poll for status and results, and optionally receiv
 > The canonical, always-current version of this reference is the web page at
 > **https://senebiclabs.com/docs**. This file mirrors it.
 
+Two kinds of project run on the same pipeline; your task config decides which:
+
+- **Evaluation** — each item carries a model output. Clinicians grade it, and results
+  include an accuracy and safety scorecard.
+- **Labeling** — each item carries raw data. Clinicians apply your label schema, and
+  results come back as clean content-and-label pairs to train on.
+
+The only difference is your task config and whether there is a model output to grade.
+
 **Base URL**
 
 ```
@@ -36,23 +45,23 @@ curl -X POST "$BASE/projects" \
   -H "Authorization: Bearer $API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "Heyrafiki safety review",
+    "name": "Clinical response evaluation",
     "eval_config": {
-      "title": "Response safety review",
-      "reviewers_per_item": 5,
+      "title": "Clinical response review",
+      "reviewers_per_item": 3,
       "schema": {
         "input": "text",
         "context": [
-          { "key": "prompt", "label": "User message" },
-          { "key": "output", "label": "Bot reply" }
+          { "key": "scenario",   "label": "Patient message" },
+          { "key": "prediction", "label": "Model response" }
         ],
-        "classes": ["Safe", "Unsafe"],
+        "classes": ["Routine", "Urgent", "Emergency"],
         "case_id_field": "case_id",
         "fields": {
-          "verdict":       { "type": "single", "options": ["Safe", "Unsafe"], "required": true },
-          "correct_label": { "type": "from_classes", "visible_when": "verdict!=Safe" },
-          "severity":      { "type": "scale", "max": 5 },
-          "notes":         { "type": "text" }
+          "verdict":         { "type": "single", "options": ["Correct", "Incorrect", "Partial"], "required": true },
+          "corrected_label": { "type": "from_classes", "visible_when": "verdict!=Correct" },
+          "safety":          { "type": "flag" },
+          "notes":           { "type": "text" }
         }
       }
     },
@@ -73,6 +82,11 @@ Returns:
 **Save the `webhook_secret`.** It is returned once, only when you register a
 `webhook_url`, and is used to verify webhook authenticity (§4). Treat it like a
 password.
+
+This example is an **evaluation** project: each item carries a `prediction`, clinicians
+return a `verdict` of `Correct` / `Incorrect` / `Partial`, and the report scores
+accuracy. For a **labeling** project, omit `prediction` and set `fields` to the labels
+you want produced; the results come back as content-and-label pairs with no scorecard.
 
 ### Config reference
 
@@ -96,8 +110,7 @@ password.
 
 ## 2. Push items — `POST /ingest`
 
-Send a batch of items (e.g. conversations). Each item is a JSON object whose fields
-match your task config.
+Send a batch of items. Each item is a JSON object whose fields match your task config.
 
 ```bash
 curl -X POST "$BASE/ingest" \
@@ -107,13 +120,14 @@ curl -X POST "$BASE/ingest" \
   -d '{
     "project_id": "YOUR_PROJECT_ID",
     "items": [
-      { "case_id": "conv_001", "prompt": "user message...", "output": "bot reply..." },
-      { "case_id": "conv_002", "prompt": "user message...", "output": "bot reply..." }
+      { "case_id": "case_001", "scenario": "patient message...", "prediction": "Routine" },
+      { "case_id": "case_002", "scenario": "patient message...", "prediction": "Urgent" }
     ]
   }'
 ```
 
-- `items` — array of objects, fields must match the task config.
+- `items` — array of objects, fields must match the task config. An evaluation item
+  carries the model output as `prediction`; a labeling item just carries the raw data.
 
 ### Idempotency
 
@@ -129,10 +143,6 @@ Use a fresh key per distinct batch. Without a key, each call appends its items, 
 two identical calls would create duplicates.
 
 Response on a new batch: `{ "ok": true, "message": "Ingested 2 items." }`
-
-You can also register (or update) the delivery webhook here by passing a
-`webhook_url` field in the body — but `POST /projects` is the usual place, and only
-that response returns the `webhook_secret`.
 
 ---
 
@@ -166,11 +176,11 @@ When delivered:
     "accuracy": { "value": 0.8, "correct": 160, "assessable": 200 },
     "critical_misses": [ ... ],
     "per_class": { ... },
-    "qa": { "mean_agreement": 0.86, "reviewers": 5, "disagreements": 12 }
+    "qa": { "mean_agreement": 0.86, "reviewers": 3, "disagreements": 12 }
   },
   "items": [
-    { "idx": 0, "content": { "case_id": "conv_001", ... },
-      "label": { "verdict": "Safe", ... }, "labeled_at": "..." }
+    { "idx": 0, "content": { "case_id": "case_001", ... },
+      "label": { "verdict": "Correct", ... }, "labeled_at": "..." }
   ]
 }
 ```
@@ -179,6 +189,11 @@ With `reviewers_per_item` above 1, each item is reviewed by several clinicians a
 combined into a consensus. The report then adds a `qa` block with the mean
 inter-reviewer agreement and the count of items where reviewers disagreed and an
 expert adjudicated.
+
+**Scoring:** the accuracy `report` is computed for **evaluation** projects whose
+`verdict` uses `Correct` / `Incorrect` / `Partial` and whose items carry a
+`prediction`. A **labeling** project still returns every reviewed item in `items` as a
+content-and-label pair to train on; consume those and ignore the report.
 
 ---
 
@@ -237,5 +252,6 @@ polling `GET /results` as the source of truth if delivery is critical.
   `422` invalid config or items missing a required field · `503` service unavailable.
 - **Idempotency**: send an `Idempotency-Key` header per batch so retries are safe.
   Without one, each `/ingest` appends its items.
-- **Content shape** is up to you as long as it matches the configured task (for text
-  review, typically `prompt` + `output`; add `case_id` to tie results to your records).
+- **Content shape** is up to you as long as it matches the configured task. Evaluation
+  items carry the model output as `prediction`; add `case_id` to tie results back to
+  your records.
