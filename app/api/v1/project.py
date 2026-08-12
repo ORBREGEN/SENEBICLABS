@@ -6,6 +6,9 @@ POST /project/submit  — a company submits a project (stored in Supabase, email
 
 import logging
 import secrets
+import hmac
+import hashlib
+import json
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException, Header, File, Form, UploadFile
@@ -447,6 +450,7 @@ def api_create_project(body: CreateProjectIn, authorization: str | None = Header
     ec = dict(body.eval_config)
     if body.webhook_url:
         ec["_webhook_url"] = body.webhook_url
+        ec.setdefault("_webhook_secret", secrets.token_hex(32))
     try:
         res = db.table("project_submissions").insert({
             "name": body.name,
@@ -462,11 +466,18 @@ def api_create_project(body: CreateProjectIn, authorization: str | None = Header
         logger.error("API create project failed: %s", exc)
         raise HTTPException(status_code=500, detail="Could not create the project.")
     logger.info("API project created: %s (%s)", pid, email)
-    return {"ok": True, "project_id": pid}
+    resp = {"ok": True, "project_id": pid}
+    if body.webhook_url:
+        resp["webhook_secret"] = ec["_webhook_secret"]
+    return resp
 
 
 @router.post("/ingest", response_model=SubmissionResponse, summary="API: push items to a project (Bearer API key)")
-def api_ingest(body: IngestIn, authorization: str | None = Header(default=None)):
+def api_ingest(
+    body: IngestIn,
+    authorization: str | None = Header(default=None),
+    idempotency_key: str | None = Header(default=None),
+):
     email = _api_client_email(authorization)
     if not email:
         raise HTTPException(status_code=401, detail="Invalid or missing API key.")
@@ -478,11 +489,19 @@ def api_ingest(body: IngestIn, authorization: str | None = Header(default=None))
         raise HTTPException(status_code=403, detail="That project is not on this API key.")
     if not body.items:
         return SubmissionResponse(ok=True, message="No items to add.")
+
+    ec = sub.data[0].get("eval_config") or {}
+
+    # Idempotency: if this batch key was already processed, don't insert again — a
+    # retried request then has the effect of a single ingest. (Key recorded after insert.)
+    if idempotency_key and idempotency_key in (ec.get("_ingest_keys") or []):
+        return SubmissionResponse(ok=True, message="Batch already ingested (idempotent).")
+
     _guard_item_keys(db, body.project_id, body.items)
 
     if body.webhook_url:
-        ec = sub.data[0].get("eval_config") or {}
         ec["_webhook_url"] = body.webhook_url
+        ec.setdefault("_webhook_secret", secrets.token_hex(32))
         db.table("project_submissions").update({"eval_config": ec}).eq("id", body.project_id).execute()
 
     try:
@@ -496,6 +515,14 @@ def api_ingest(body: IngestIn, authorization: str | None = Header(default=None))
     except Exception as exc:
         logger.error("API ingest failed: %s", exc)
         raise HTTPException(status_code=500, detail="Could not add items.")
+
+    # Record the idempotency key only AFTER a successful insert, so a crash mid-insert
+    # never marks a batch as done when it is not.
+    if idempotency_key:
+        keys = ec.get("_ingest_keys") or []
+        keys.append(idempotency_key)
+        ec["_ingest_keys"] = keys
+        db.table("project_submissions").update({"eval_config": ec}).eq("id", body.project_id).execute()
 
     # Auto-sync: push just these new items to Label Studio so clinicians can start with
     # no operator click. Best-effort — a sync failure (e.g. config not set yet) never
@@ -562,8 +589,18 @@ def _fire_webhook(db, project_id: str) -> None:
             "report": report_svc.build_report(db, project_id),
             "items": rows.data or [],
         }
+        
+        body_bytes = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
+        
+        headers = {"Content-Type": "application/json"}
+        secret = ec.get("_webhook_secret")
+        if secret:
+            signature = hmac.new(secret.encode(), body_bytes, hashlib.sha256).hexdigest()
+            headers["X-Senebiclabs-Signature"] = "sha256=" + signature
+        
+        
         import httpx
-        r = httpx.post(url, json=payload, timeout=15)
+        r = httpx.post(url, content=body_bytes, headers=headers, timeout=15)
         logger.info("Webhook for %s -> %s (%s)", project_id, url, r.status_code)
     except Exception as exc:
         logger.error("Webhook delivery failed for %s: %s", project_id, exc)
