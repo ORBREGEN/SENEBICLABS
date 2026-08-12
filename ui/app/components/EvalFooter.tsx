@@ -4,6 +4,7 @@ const NAV = {
   product: [
     { label: 'What we do', href: '/#what-you-get' },
     { label: 'Modalities', href: '/#modalities' },
+    { label: 'API docs', href: '/docs' },
     { label: 'Book a demo', href: '/submit' },
   ],
   company: [

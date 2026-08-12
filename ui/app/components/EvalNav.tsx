@@ -25,8 +25,23 @@ export default function EvalNav() {
           <a href="#why-us">Why us</a>
         </div>
 
-        {/* Persistent CTA, always visible, including mobile  */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, gridColumn: 3 }}>
+        {/* Persistent CTA, always visible, including mobile. API link sits beside it so
+            developer visitors (a qualified audience) can reach the docs from any viewport. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, gridColumn: 3 }}>
+          <a
+            href="/docs"
+            style={{
+              fontFamily: "'Geist Mono', monospace",
+              fontSize: 11,
+              letterSpacing: '0.12em',
+              textTransform: 'uppercase',
+              color: 'var(--ink)',
+              textDecoration: 'none',
+              opacity: 0.72,
+            }}
+          >
+            API
+          </a>
           <a href="/submit" className="nav-join-cta">Book a demo →</a>
         </div>
 
