@@ -19,7 +19,7 @@ export const metadata: Metadata = {
 const SANS = "'Geist', system-ui, -apple-system, sans-serif"
 const READ = "'DM Sans', system-ui, sans-serif"
 
-const T_DISPLAY: React.CSSProperties = { fontFamily: SANS, fontWeight: 600, fontSize: 'clamp(42px, 6.2vw, 84px)', letterSpacing: '-0.035em', lineHeight: 1.0 }
+const T_DISPLAY: React.CSSProperties = { fontFamily: SANS, fontWeight: 600, fontSize: 'clamp(46px, 7.6vw, 108px)', letterSpacing: '-0.04em', lineHeight: 0.97 }
 const T_H2: React.CSSProperties = { fontFamily: SANS, fontWeight: 600, fontSize: 'clamp(28px, 3.8vw, 48px)', letterSpacing: '-0.03em', lineHeight: 1.08 }
 const T_H3: React.CSSProperties = { fontFamily: SANS, fontWeight: 600, fontSize: 'clamp(19px, 1.7vw, 22px)', letterSpacing: '-0.02em', lineHeight: 1.28 }
 const T_LEAD: React.CSSProperties = { fontFamily: READ, fontWeight: 400, fontSize: 'clamp(17px, 1.6vw, 20px)', lineHeight: 1.6, color: 'rgba(255,255,255,0.74)' }
@@ -70,13 +70,13 @@ export default function HomePage() {
       <EvalNav />
 
       {/* HERO  */}
-      <section style={{ padding: 'clamp(148px, 18vw, 216px) 0 clamp(60px, 8vw, 100px)' }}>
+      <section style={{ padding: 'clamp(112px, 13vw, 172px) 0 clamp(56px, 8vw, 96px)' }}>
         <div style={{ ...WIDE, textAlign: 'center' }}>
           <span className="iso-label" style={{ display: 'inline-block', marginBottom: 30 }}>Data infrastructure for medical AI</span>
-          <h1 style={{ ...T_DISPLAY, maxWidth: 960, margin: '0 auto', textWrap: 'balance' }}>
+          <h1 style={{ ...T_DISPLAY, maxWidth: 1320, margin: '0 auto', textWrap: 'balance' }}>
             Clinician-grade data for medical AI.
           </h1>
-          <p style={{ ...T_LEAD, fontSize: 'clamp(18px, 1.8vw, 22px)', maxWidth: 640, margin: '32px auto 0' }}>
+          <p style={{ ...T_LEAD, fontSize: 'clamp(18px, 1.9vw, 23px)', maxWidth: 780, margin: '34px auto 0' }}>
             The layer between raw medicine and a model you can trust. Licensed clinicians
             label, evaluate, and create the data your models are trained, aligned, and tested on.
           </p>
