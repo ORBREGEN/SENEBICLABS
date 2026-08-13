@@ -3,146 +3,182 @@ import EvalNav from './components/EvalNav'
 import EvalFooter from './components/EvalFooter'
 
 export const metadata: Metadata = {
-  title: 'Data infrastructure for medical AI',
+  title: 'Clinician-grade data for medical AI · Senebiclabs',
   description:
-    "Senebiclabs is the data layer for medical AI. Licensed clinicians label, evaluate, and create the data that trains and validates your models, across radiology, pathology, clinical text, and medical LLMs.",
+    'Senebiclabs is the data layer for medical AI. Licensed clinicians label, evaluate, and create the data medical models are trained, aligned, and tested on, delivered by API, isolated per client, and traceable to a name.',
   alternates: { canonical: '/' },
   openGraph: {
-    title: 'The data layer for medical AI · Senebiclabs',
-    description: 'Licensed clinicians label, evaluate, and create clinician-grade data for medical AI, with quality you can defend.',
+    title: 'Clinician-grade data for medical AI · Senebiclabs',
+    description: 'Licensed clinicians label, evaluate, and create the data medical models are trained, aligned, and tested on.',
     url: 'https://senebiclabs.com',
   },
 }
 
-// One type scale (6 sizes), 3 weights: 100 headings · 300 body · 600 accent
-const DISPLAY = '"SF Pro Display", -apple-system, BlinkMacSystemFont, system-ui, sans-serif'
-const BODY = '"DM Sans", system-ui, sans-serif'
-const T_DISPLAY: React.CSSProperties = { fontFamily: DISPLAY, fontWeight: 100, fontSize: 'clamp(44px, 6.6vw, 88px)', letterSpacing: '0.03em', lineHeight: 1.04 }
-const T_H2: React.CSSProperties = { fontFamily: DISPLAY, fontWeight: 100, fontSize: 'clamp(32px, 4vw, 52px)', letterSpacing: '0.02em', lineHeight: 1.14 }
-const T_H3: React.CSSProperties = { fontFamily: DISPLAY, fontWeight: 100, fontSize: 'clamp(21px, 1.9vw, 24px)', letterSpacing: '0.02em', lineHeight: 1.3 }
-const T_SUB: React.CSSProperties = { fontFamily: BODY, fontWeight: 300, fontSize: 'clamp(17px, 1.6vw, 20px)', lineHeight: 1.7, color: 'rgba(255,255,255,0.86)' }
-const T_BODY: React.CSSProperties = { fontFamily: BODY, fontWeight: 300, fontSize: 16, lineHeight: 1.72, color: 'rgba(255,255,255,0.7)' }
-const em: React.CSSProperties = { fontWeight: 600, fontStyle: 'normal' }
+// Type: Geist (brand) for headings, DM Sans for reading, Geist Mono for labels.
+// Confident weights, tight tracking. No hairline display faces, no centered slop.
+const SANS = "'Geist', system-ui, -apple-system, sans-serif"
+const READ = "'DM Sans', system-ui, sans-serif"
 
-// One spacing scale, reused everywhere, no one-off values
-const PAD_SECTION = 'clamp(104px, 13vw, 168px) 0'
-const GAP_GRID = 'clamp(64px, 7vw, 88px)'          // section header → grid
-const PAD_CELL = 'clamp(40px, 4.4vw, 52px) clamp(30px, 3vw, 40px)'
-const GAP_HEAD = 28                                 // eyebrow → title → sub rhythm
+const T_DISPLAY: React.CSSProperties = { fontFamily: SANS, fontWeight: 600, fontSize: 'clamp(40px, 5.8vw, 78px)', letterSpacing: '-0.035em', lineHeight: 1.0 }
+const T_H2: React.CSSProperties = { fontFamily: SANS, fontWeight: 600, fontSize: 'clamp(28px, 3.6vw, 46px)', letterSpacing: '-0.03em', lineHeight: 1.08 }
+const T_H3: React.CSSProperties = { fontFamily: SANS, fontWeight: 600, fontSize: 'clamp(19px, 1.7vw, 22px)', letterSpacing: '-0.02em', lineHeight: 1.28 }
+const T_LEAD: React.CSSProperties = { fontFamily: READ, fontWeight: 400, fontSize: 'clamp(17px, 1.6vw, 20px)', lineHeight: 1.6, color: 'rgba(255,255,255,0.74)' }
+const T_BODY: React.CSSProperties = { fontFamily: READ, fontWeight: 400, fontSize: 15.5, lineHeight: 1.66, color: 'rgba(255,255,255,0.62)' }
+
+const WRAP_TIGHT = 760
+const PAD_SECTION = 'clamp(88px, 11vw, 140px) 0'
+const GAP_GRID = 'clamp(48px, 6vw, 72px)'
+const PAD_CELL = 'clamp(34px, 3.6vw, 46px) clamp(28px, 2.8vw, 38px)'
 
 const SECTION: React.CSSProperties = { padding: PAD_SECTION, borderTop: '1px solid var(--hairline)' }
-const HEAD: React.CSSProperties = { textAlign: 'center', maxWidth: 780, margin: '0 auto' }
 const CELL: React.CSSProperties = { border: '1px solid var(--hairline)', background: 'var(--navy)', padding: PAD_CELL, display: 'flex', flexDirection: 'column' }
-const eyebrow = (mb: number): React.CSSProperties => ({ display: 'inline-block', marginBottom: mb })
 
-function Head({ tag, title, sub }: { tag: string; title: React.ReactNode; sub: string }) {
+function Head({ tag, title, sub }: { tag: string; title: string; sub?: string }) {
   return (
-    <div style={HEAD}>
-      <span className="iso-label" style={eyebrow(GAP_HEAD)}>{tag}</span>
-      <h2 style={{ ...T_H2, margin: 0 }}>{title}</h2>
-      <p style={{ ...T_SUB, maxWidth: 620, margin: `${GAP_HEAD}px auto 0` }}>{sub}</p>
+    <div style={{ maxWidth: WRAP_TIGHT }}>
+      <span className="iso-label" style={{ display: 'inline-block', marginBottom: 22 }}>{tag}</span>
+      <h2 style={{ ...T_H2, margin: 0, textWrap: 'balance' }}>{title}</h2>
+      {sub && <p style={{ ...T_LEAD, margin: '22px 0 0', maxWidth: 620 }}>{sub}</p>}
     </div>
   )
 }
 
-function Cell({ tag, title, body }: { tag?: string; title: string; body: string; }) {
+function Cell({ tag, title, body }: { tag?: string; title: string; body: string }) {
   return (
     <>
-      {tag && <span className="iso-label" style={{ marginBottom: 28 }}>{tag}</span>}
-      <h3 style={{ ...T_H3, margin: '0 0 12px' }}>{title}</h3>
-      <p style={T_BODY}>{body}</p>
+      {tag && <span className="iso-label" style={{ marginBottom: 26 }}>{tag}</span>}
+      <h3 style={{ ...T_H3, margin: '0 0 10px' }}>{title}</h3>
+      <p style={{ ...T_BODY, margin: 0 }}>{body}</p>
     </>
   )
 }
 
-function Cta({ center = false }: { center?: boolean }) {
+function Ctas() {
   return (
-    <div style={{ display: 'flex', gap: 28, alignItems: 'center', flexWrap: 'wrap', justifyContent: center ? 'center' : 'flex-start' }}>
+    <div style={{ display: 'flex', gap: 18, alignItems: 'center', flexWrap: 'wrap' }}>
       <a href="/submit" className="nav-join-cta">Book a demo →</a>
-      <a href="mailto:senebiclabs@gmail.com" className="iso-cta iso-cta--muted" style={{ textTransform: 'none', fontSize: 13, letterSpacing: '0.03em' }}>
-        or just email us →
-      </a>
+      <a href="/docs" className="iso-cta" style={{ fontSize: 12 }}>Read the docs →</a>
     </div>
   )
 }
 
-export default function EvaluatePage() {
+export default function HomePage() {
   return (
     <>
       <EvalNav />
 
-      {/* HERO  */}
-      <section style={{ padding: 'clamp(164px, 20vw, 240px) 0 clamp(96px, 12vw, 136px)' }}>
-        <div className="wrap" style={{ textAlign: 'center' }}>
-          <span className="iso-label" style={eyebrow(36)}>Data infrastructure for medical AI</span>
-          <h1 style={{ ...T_DISPLAY, maxWidth: 940, margin: '0 auto' }}>
-            Clinician-grade data for <em style={em}>medical AI</em>.
+      {/* HERO — left aligned, confident  */}
+      <section style={{ padding: 'clamp(140px, 17vw, 200px) 0 clamp(56px, 8vw, 96px)' }}>
+        <div className="wrap">
+          <span className="iso-label" style={{ display: 'inline-block', marginBottom: 30 }}>Data infrastructure for medical AI</span>
+          <h1 style={{ ...T_DISPLAY, maxWidth: 940, margin: 0, textWrap: 'balance' }}>
+            Clinician-grade data for medical AI.
           </h1>
-          <p style={{ ...T_SUB, fontSize: 'clamp(18px, 1.9vw, 22px)', maxWidth: 700, margin: '36px auto 0' }}>
-            Licensed clinicians label, evaluate, and create the data that trains and
-            validates your models. The layer between raw medicine and a model you can trust.
+          <p style={{ ...T_LEAD, fontSize: 'clamp(18px, 1.8vw, 22px)', maxWidth: 640, margin: '30px 0 0' }}>
+            Licensed clinicians label, evaluate, and create the data medical models are
+            trained, aligned, and tested on. Delivered by API, isolated per client, and
+            traceable to a name.
           </p>
-          <div style={{ marginTop: 52, display: 'flex', justifyContent: 'center' }}>
-            <Cta center />
+          <div style={{ marginTop: 44 }}>
+            <Ctas />
           </div>
         </div>
       </section>
 
-      {/* THE PROBLEM  */}
+      {/* TRUST BAR — factual capabilities, not metrics  */}
+      <section style={{ borderTop: '1px solid var(--hairline)', borderBottom: '1px solid var(--hairline)' }}>
+        <div className="wrap" style={{ display: 'flex', flexWrap: 'wrap', gap: '14px 28px', padding: '22px 48px' }}>
+          {['Licensed clinicians', 'De-identified', 'Isolated per client', 'Consensus reviewed', 'API-native', 'Fully audited'].map((t, i) => (
+            <span key={t} className="iso-label" style={{ fontSize: 12, letterSpacing: '0.1em', color: i === 0 ? 'var(--ink)' : 'var(--slate)' }}>{t}</span>
+          ))}
+        </div>
+      </section>
+
+      {/* PROBLEM  */}
       <section style={SECTION}>
-        <div className="wrap" style={{ textAlign: 'center' }}>
-          <span className="iso-label" style={eyebrow(GAP_HEAD)}>The problem</span>
-          <p style={{ ...T_H2, maxWidth: 900, margin: '0 auto' }}>
-            Medical AI is only as good as its <em style={em}>data</em>. Crowd labels and a model
-            grading itself will not survive a hospital, a regulator, or an investor asking how you
-            know it is right.
+        <div className="wrap">
+          <span className="iso-label" style={{ display: 'inline-block', marginBottom: 22 }}>The problem</span>
+          <p style={{ ...T_H2, fontSize: 'clamp(24px, 3vw, 38px)', maxWidth: 900, margin: 0, textWrap: 'balance' }}>
+            Medical AI is only as good as its data. Crowd labels and a model grading itself
+            do not hold up to a hospital, a regulator, or an investor asking how you know it
+            is right.
           </p>
         </div>
       </section>
 
-      {/* WHAT YOU GET  */}
+      {/* WHAT WE DO  */}
       <section id="what-you-get" style={{ ...SECTION, scrollMarginTop: 90 }}>
         <div className="wrap">
-          <Head tag="What we do" title={<>Label. Evaluate. <em style={em}>Create</em>.</>}
-                sub="The three kinds of data work medical AI runs on, all done by licensed clinicians." />
-
+          <Head tag="What we do" title="Label. Evaluate. Create."
+                sub="The data work behind a medical model, at every stage of its life, done by licensed clinicians." />
           <div className="blocks-3col" style={{ marginTop: GAP_GRID }}>
             {[
               { n: '01', t: 'Label', d: 'Turn raw medical data into ground truth: imaging labels, clinical extraction, classification, and de-identification.' },
-              { n: '02', t: 'Evaluate', d: 'Grade your model’s outputs against a clinician’s read, with every critical miss surfaced, in a report you can defend.' },
-              { n: '03', t: 'Create', d: 'Clinician-written gold answers and demonstrations to fine-tune and align on.' },
+              { n: '02', t: 'Evaluate', d: 'Grade model outputs against a clinician read. Every critical miss surfaced, in an accuracy and safety report you can defend.' },
+              { n: '03', t: 'Create', d: 'Clinician-written gold answers and preference data to fine-tune and align on, the scarce data teams cannot crowdsource.' },
             ].map((c, i) => (
               <div key={c.n} style={{ ...CELL, marginLeft: i % 3 === 0 ? 0 : -1 }}>
                 <Cell tag={c.n} title={c.t} body={c.d} />
               </div>
             ))}
           </div>
+        </div>
+      </section>
 
-          {/* Deliverable, full-width panel, flush under the grid  */}
-          <div style={{ ...CELL, marginTop: -1, padding: 'clamp(56px, 6vw, 80px) clamp(30px, 3vw, 40px)', textAlign: 'center' }}>
-            <span className="iso-label" style={eyebrow(GAP_HEAD)}>The deliverable</span>
-            <h3 style={{ ...T_H2, fontSize: 'clamp(26px, 3vw, 40px)', margin: '0 auto', maxWidth: 640 }}>Data you can defend.</h3>
-            <p style={{ ...T_SUB, margin: '28px auto 0', maxWidth: 700 }}>
-              Labeled datasets, scored reports, or gold examples, every item traceable to a
-              licensed clinician and keyed to your own case IDs.
-            </p>
+      {/* HOW IT WORKS — the real pipeline, API-first  */}
+      <section id="how" style={{ ...SECTION, scrollMarginTop: 90 }}>
+        <div className="wrap">
+          <Head tag="How it works" title="Built API-first."
+                sub="Send data, licensed clinicians review it, you get it back. One pipeline, an API around it." />
+          <div className="blocks-3col" style={{ marginTop: GAP_GRID }}>
+            {[
+              { n: 'Step 01', t: 'Send your data', d: 'Push items through the API or the dashboard. Raw data to label, or your model outputs to grade.' },
+              { n: 'Step 02', t: 'Clinicians review', d: 'Licensed specialists work each case, with several reviewers per item combined into a consensus.' },
+              { n: 'Step 03', t: 'Get it back', d: 'Labeled datasets or scored reports, delivered by API and signed webhook, keyed to your own case IDs.' },
+            ].map((s, i) => (
+              <div key={s.n} style={{ ...CELL, marginLeft: i % 3 === 0 ? 0 : -1 }}>
+                <Cell tag={s.n} title={s.t} body={s.d} />
+              </div>
+            ))}
+          </div>
+          <p style={{ ...T_BODY, marginTop: 26 }}>
+            <a href="/docs" className="iso-cta" style={{ fontSize: 12 }}>Read the API reference →</a>
+          </p>
+        </div>
+      </section>
+
+      {/* RIGOR / WHY US  */}
+      <section id="why-us" style={{ ...SECTION, scrollMarginTop: 90 }}>
+        <div className="wrap">
+          <Head tag="Why us" title="Defensible by construction."
+                sub="How medical data is handled separates a result you can stand behind from a liability." />
+          <div className="cards-2col" style={{ marginTop: GAP_GRID, gap: 1, background: 'var(--hairline)' }}>
+            {[
+              { k: 'Credible', t: 'Licensed clinicians', d: 'Medical specialists review your data, one case at a time. Not a crowd, and not a model grading a model.' },
+              { k: 'Rigorous', t: 'Consensus quality control', d: 'Several clinicians review each item, combined with inter-reviewer agreement so you can see where they concur.' },
+              { k: 'Private', t: 'Isolated per client', d: 'Your data is de-identified before review and walled off from every other client.' },
+              { k: 'Defensible', t: 'Fully audited', d: 'Every review is recorded: who did it, what they decided, and when.' },
+            ].map((p) => (
+              <div key={p.t} style={{ background: 'var(--navy)', padding: PAD_CELL, display: 'flex', flexDirection: 'column' }}>
+                <Cell tag={p.k} title={p.t} body={p.d} />
+              </div>
+            ))}
           </div>
         </div>
       </section>
 
-      {/* MODALITIES (peer list)  */}
+      {/* MODALITIES  */}
       <section id="modalities" style={{ ...SECTION, scrollMarginTop: 90 }}>
         <div className="wrap">
-          <Head tag="What we cover" title={<>Across every medical <em style={em}>modality</em>.</>}
-                sub="Wherever your model touches medicine, a licensed specialist can label and evaluate it." />
-
+          <Head tag="What we cover" title="Across every medical modality."
+                sub="Wherever a model touches medicine, a licensed specialist can label and evaluate it." />
           <div className="blocks-3col" style={{ marginTop: GAP_GRID }}>
             {[
               { t: 'Clinical text', d: 'Extraction, coding, and summaries.' },
               { t: 'Radiology', d: 'X-ray, CT, and MRI.' },
               { t: 'Pathology', d: 'Whole-slide and histology.' },
-              { t: 'Medical LLMs', d: 'Evaluation, safety, and RLHF.' },
-              { t: 'Genomics & omics', d: 'Variant and multi-omic data.' },
+              { t: 'Medical LLMs', d: 'Evaluation, safety, and preference data.' },
+              { t: 'Genomics and omics', d: 'Variant and multi-omic data.' },
               { t: 'De-identification', d: 'PHI detection and redaction.' },
             ].map((m, i) => (
               <div key={m.t} style={{ ...CELL, marginLeft: i % 3 === 0 ? 0 : -1, marginTop: i >= 3 ? -1 : 0 }}>
@@ -153,79 +189,18 @@ export default function EvaluatePage() {
         </div>
       </section>
 
-      {/* ABOUT (this service only)  */}
-      <section id="about" style={{ ...SECTION, scrollMarginTop: 90 }}>
-        <div className="wrap">
-          <Head tag="About" title={<>How the work <em style={em}>holds up</em>.</>}
-                sub="Licensed clinicians do structured, case-by-case work, built so the result holds up." />
-
-          <div className="cards-2col" style={{ marginTop: GAP_GRID, gap: 1, background: 'var(--hairline)', borderRadius: 0 }}>
-            <div style={{ background: 'var(--navy)', padding: PAD_CELL, display: 'flex', flexDirection: 'column' }}>
-              <Cell tag="Who does it"
-                    title="Licensed clinicians, case by case"
-                    body="Every case is handled by a licensed clinician as a structured expert task, one at a time. Not crowd labelers, and not a model grading a model." />
-            </div>
-            <div style={{ background: 'var(--navy)', padding: PAD_CELL, display: 'flex', flexDirection: 'column' }}>
-              <Cell tag="Why it holds up"
-                    title="Defensible by construction"
-                    body="Each case gets a structured, multi-dimension assessment. Data is de-identified and isolated per client, and every task is recorded: who did what, and when." />
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* WHY US (even 2×2)  */}
-      <section id="why-us" style={{ ...SECTION, scrollMarginTop: 90 }}>
-        <div className="wrap">
-          <Head tag="Why us" title={<>Compliance-grade by <em style={em}>default</em>.</>}
-                sub="How the data is handled separates a defensible result from a liability. Built for medical data, not crowdsourced." />
-
-          <div className="cards-2col" style={{ marginTop: GAP_GRID, gap: 1, background: 'var(--hairline)', borderRadius: 0 }}>
-            {[
-              { k: 'Credible', t: 'Licensed clinicians', d: 'Medical specialists review your data, not a crowd.' },
-              { k: 'Safe', t: 'De-identified', d: 'Identifiers stripped before anyone sees a case.' },
-              { k: 'Private', t: 'Isolated per client', d: 'Your data walled off from every other client’s.' },
-              { k: 'Defensible', t: 'Fully audited', d: 'Every review logged: who, what, and when.' },
-            ].map((p) => (
-              <div key={p.t} style={{ background: 'var(--navy)', padding: PAD_CELL, display: 'flex', flexDirection: 'column' }}>
-                <Cell tag={p.k} title={p.t} body={p.d} />
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* HOW IT WORKS  */}
-      <section style={SECTION}>
-        <div className="wrap">
-          <Head tag="How it works" title={<>Prove it on a <em style={em}>slice</em> first.</>}
-                sub="Start small. See the value before you commit to volume." />
-
-          <div className="blocks-3col" style={{ marginTop: GAP_GRID }}>
-            {[
-              { n: 'Step 01', t: 'Send your data', d: 'Raw data to label, or your model’s outputs to evaluate.' },
-              { n: 'Step 02', t: 'Clinicians work', d: 'Licensed specialists label, evaluate, or write, de-identified and isolated.' },
-              { n: 'Step 03', t: 'You get it back', d: 'Labeled data, a scored report, or gold examples, keyed to your IDs.' },
-            ].map((s, i) => (
-              <div key={s.n} style={{ ...CELL, marginLeft: i % 3 === 0 ? 0 : -1 }}>
-                <Cell tag={s.n} title={s.t} body={s.d} />
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* CLOSE  */}
       <section style={SECTION}>
-        <div className="wrap" style={{ textAlign: 'center' }}>
-          <h2 style={{ ...T_H2, maxWidth: 720, margin: '0 auto' }}>
-            Build medical AI on data you can <em style={em}>defend</em>.
+        <div className="wrap">
+          <h2 style={{ ...T_H2, maxWidth: 720, margin: 0, textWrap: 'balance' }}>
+            Build medical AI on data you can defend.
           </h2>
-          <p style={{ ...T_SUB, maxWidth: 560, margin: '28px auto 0' }}>
-            Book a demo to see how clinician-grade data changes what your model can prove.
+          <p style={{ ...T_LEAD, maxWidth: 560, margin: '22px 0 0' }}>
+            Start with a slice, see the value, then scale. Book a demo, or read the docs and
+            start from code.
           </p>
-          <div style={{ marginTop: 52, display: 'flex', justifyContent: 'center' }}>
-            <Cta center />
+          <div style={{ marginTop: 40 }}>
+            <Ctas />
           </div>
         </div>
       </section>

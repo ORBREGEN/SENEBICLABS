@@ -19,9 +19,9 @@ export default function EvalNav() {
             All four are on-page section jumps, About is this service's #about, not the
             main-site company About. No directory links, no dropdowns.  */}
         <div className="nav-links">
-          <a href="#what-you-get">What you get</a>
+          <a href="#what-you-get">What we do</a>
+          <a href="#how">How it works</a>
           <a href="#modalities">Modalities</a>
-          <a href="#about">About</a>
           <a href="#why-us">Why us</a>
         </div>
 
