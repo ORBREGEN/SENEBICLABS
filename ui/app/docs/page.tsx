@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import './docs.css'
+import DocsEnhance from './DocsEnhance'
 
 export const metadata: Metadata = {
   title: 'API · Senebiclabs',
@@ -30,8 +31,10 @@ export default function DocsPage() {
       <aside className="docs-side">
         <a href="/" className="docs-brand">Senebiclabs</a>
         <div className="docs-brand-sub">API reference</div>
+        <a href="/developers" className="docs-cta">Get an API key →</a>
         <nav className="docs-nav">
           <a href="#overview">Overview</a>
+          <a href="#quickstart">Quickstart</a>
           <a href="#auth">Authentication</a>
           <div className="grp">Endpoints</div>
           <a href="#create">Create a project</a>
@@ -63,6 +66,38 @@ export default function DocsPage() {
 
           <h3>Base URL</h3>
           <Code>{BASE}</Code>
+        </section>
+
+        {/* Quickstart */}
+        <section id="quickstart" className="docs-sec">
+          <span className="docs-eyebrow">Quickstart</span>
+          <h2>From zero to results</h2>
+          <p>
+            The whole flow in four calls. First, <a href="/developers" style={{ color: '#fff' }}>get a key</a>,
+            then set it in your shell:
+          </p>
+          <Code>{`BASE="${BASE}"
+KEY="your_api_key"`}</Code>
+
+          <h3>1 · Create a project</h3>
+          <Code>{`curl -s -X POST "$BASE/projects" \\
+  -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \\
+  -d '{ "name": "My eval", "eval_config": { ... } }'`}</Code>
+          <p>Returns a <C>project_id</C>. Full task config in <a href="#create" style={{ color: '#fff' }}>Create a project</a>.</p>
+
+          <h3>2 · Push items</h3>
+          <Code>{`curl -s -X POST "$BASE/ingest" \\
+  -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \\
+  -H "Idempotency-Key: batch-1" \\
+  -d '{ "project_id": "...", "items": [ ... ] }'`}</Code>
+
+          <h3>3 · Poll for results</h3>
+          <Code>{`curl -s "$BASE/results?project_id=..." -H "Authorization: Bearer $KEY"`}</Code>
+          <p>
+            Clinicians review, then <C>status</C> becomes <C>delivered</C> with the report and reviewed
+            items. Prefer a push? Register a <a href="#webhooks" style={{ color: '#fff' }}>webhook</a> and we
+            call you, signed.
+          </p>
         </section>
 
         {/* Auth */}
@@ -332,6 +367,7 @@ async def hook(request: Request):
           </div>
         </section>
       </main>
+      <DocsEnhance />
     </div>
   )
 }
