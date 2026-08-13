@@ -29,6 +29,8 @@ const PAD_SECTION = 'clamp(92px, 12vw, 152px) 0'
 const GAP_GRID = 'clamp(48px, 6vw, 72px)'
 const PAD_CELL = 'clamp(38px, 4vw, 52px) clamp(28px, 3vw, 38px)'
 
+// Wider than the shared .wrap (1100) so the homepage uses the page, not a narrow column.
+const WIDE: React.CSSProperties = { maxWidth: 1440, margin: '0 auto', padding: '0 clamp(24px, 4vw, 60px)' }
 const SECTION: React.CSSProperties = { padding: PAD_SECTION, borderTop: '1px solid var(--hairline)' }
 const HEAD: React.CSSProperties = { textAlign: 'center', maxWidth: 760, margin: '0 auto' }
 const CELL: React.CSSProperties = { border: '1px solid var(--hairline)', background: 'var(--navy)', padding: PAD_CELL, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }
@@ -69,7 +71,7 @@ export default function HomePage() {
 
       {/* HERO  */}
       <section style={{ padding: 'clamp(148px, 18vw, 216px) 0 clamp(60px, 8vw, 100px)' }}>
-        <div className="wrap" style={{ textAlign: 'center' }}>
+        <div style={{ ...WIDE, textAlign: 'center' }}>
           <span className="iso-label" style={{ display: 'inline-block', marginBottom: 30 }}>Data infrastructure for medical AI</span>
           <h1 style={{ ...T_DISPLAY, maxWidth: 960, margin: '0 auto', textWrap: 'balance' }}>
             Clinician-grade data for medical AI.
@@ -91,7 +93,7 @@ export default function HomePage() {
 
       {/* PROBLEM  */}
       <section style={SECTION}>
-        <div className="wrap" style={{ textAlign: 'center' }}>
+        <div style={{ ...WIDE, textAlign: 'center' }}>
           <p style={{ ...T_H2, fontSize: 'clamp(24px, 3.1vw, 40px)', maxWidth: 900, margin: '0 auto', textWrap: 'balance' }}>
             Medical AI is only as good as its data. Crowd labels and a model grading itself
             will not survive a hospital, a regulator, or an investor asking how you know it
@@ -102,7 +104,7 @@ export default function HomePage() {
 
       {/* WHAT WE DO  */}
       <section id="what-you-get" style={{ ...SECTION, scrollMarginTop: 90 }}>
-        <div className="wrap">
+        <div style={WIDE}>
           <Head tag="What we do" title="Label. Evaluate. Create."
                 sub="The data work behind a medical model, at every stage of its life, done by licensed clinicians." />
           <div className="blocks-3col" style={{ marginTop: GAP_GRID }}>
@@ -121,7 +123,7 @@ export default function HomePage() {
 
       {/* HOW IT WORKS  */}
       <section id="how" style={{ ...SECTION, scrollMarginTop: 90 }}>
-        <div className="wrap">
+        <div style={WIDE}>
           <Head tag="How it works" title="Built API-first."
                 sub="Send data, licensed clinicians review it, you get it back. One pipeline, an API around it." />
           <div className="blocks-3col" style={{ marginTop: GAP_GRID }}>
@@ -143,7 +145,7 @@ export default function HomePage() {
 
       {/* WHY US  */}
       <section id="why-us" style={{ ...SECTION, scrollMarginTop: 90 }}>
-        <div className="wrap">
+        <div style={WIDE}>
           <Head tag="Why us" title="Defensible by construction."
                 sub="How medical data is handled separates a result you can stand behind from a liability." />
           <div className="cards-2col" style={{ marginTop: GAP_GRID, gap: 1, background: 'var(--hairline)' }}>
@@ -163,7 +165,7 @@ export default function HomePage() {
 
       {/* MODALITIES  */}
       <section id="modalities" style={{ ...SECTION, scrollMarginTop: 90 }}>
-        <div className="wrap">
+        <div style={WIDE}>
           <Head tag="What we cover" title="Across every medical modality." />
           <div className="blocks-3col" style={{ marginTop: GAP_GRID }}>
             {[
@@ -184,7 +186,7 @@ export default function HomePage() {
 
       {/* CLOSE  */}
       <section style={SECTION}>
-        <div className="wrap" style={{ textAlign: 'center' }}>
+        <div style={{ ...WIDE, textAlign: 'center' }}>
           <h2 style={{ ...T_H2, maxWidth: 720, margin: '0 auto', textWrap: 'balance' }}>
             Build medical AI on data you can defend.
           </h2>
