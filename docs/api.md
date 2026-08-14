@@ -147,6 +147,12 @@ two identical calls would create duplicates.
 
 Response on a new batch: `{ "ok": true, "message": "Ingested 2 items." }`
 
+### Bulk
+
+Send large batches in a single call. `/ingest` returns immediately even for thousands
+of items; the data is prepared for clinician review in the background, so you are never
+blocked waiting on it. Poll `GET /results` for progress.
+
 ---
 
 ## 3. Poll status + results — `GET /results`

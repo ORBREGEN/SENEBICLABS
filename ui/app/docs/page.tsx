@@ -212,6 +212,13 @@ KEY="your_api_key"`}</Code>
           </p>
           <h3>Response</h3>
           <Code>{`{ "ok": true, "message": "Ingested 2 items." }`}</Code>
+          <h3>Bulk</h3>
+          <p>
+            Send large batches in a single call. <C>/ingest</C> returns immediately even for
+            thousands of items; the data is prepared for clinician review in the background, so
+            you are never blocked waiting on it. Poll <a href="#results" style={{ color: '#fff' }}>results</a>{' '}
+            for progress.
+          </p>
         </section>
 
         {/* Results */}
