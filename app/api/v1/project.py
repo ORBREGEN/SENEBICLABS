@@ -597,7 +597,8 @@ def api_ingest(
         )
         start = (existing.data[0]["idx"] + 1) if existing.data else 0
         rows = [{"project_id": body.project_id, "idx": start + i, "content": c} for i, c in enumerate(body.items)]
-        inserted = db.table("project_items").insert(rows).execute().data or []
+        for i in range(0, len(rows), 500):        # chunked so a bulk batch never exceeds the payload limit
+            db.table("project_items").insert(rows[i:i + 500]).execute()
     except Exception as exc:
         logger.error("API ingest failed: %s", exc)
         raise HTTPException(status_code=500, detail="Could not add items.")
@@ -610,17 +611,97 @@ def api_ingest(
         ec["_ingest_keys"] = keys
         db.table("project_submissions").update({"eval_config": ec}).eq("id", body.project_id).execute()
 
-    # Auto-sync: push just these new items to Label Studio so clinicians can start with
-    # no operator click. Best-effort — a sync failure (e.g. config not set yet) never
-    # fails the ingest; the operator can sync manually.
-    try:
-        from app.api.v1.ls import push_new_items
-        push_new_items(db, body.project_id, [{"id": r["id"], "content": r.get("content")} for r in inserted if r.get("id")])
-    except Exception as exc:
-        logger.warning("Auto-sync after ingest skipped for %s: %s", body.project_id, exc)
+    # Bulk-safe sync: do NOT push to Label Studio inline — that blocks the request and
+    # times out on large batches. Items land as 'pending'; a background /sync-pending run
+    # pushes them to LS in chunks. Kick it off now (best-effort); GET /results re-kicks if
+    # anything is still pending, so nothing gets stuck.
+    _kick_sync(body.project_id)
 
-    logger.info("API ingest: %d items to %s", len(body.items), body.project_id)
+    logger.info("API ingest: %d items to %s (queued for background sync)", len(body.items), body.project_id)
     return SubmissionResponse(ok=True, message=f"Ingested {len(body.items)} items.")
+
+
+def _kick_sync(project_id: str) -> None:
+    """Fire-and-forget trigger for the background /sync-pending run on this service.
+    We send the request and let the read time out — Cloud Run keeps processing the
+    triggered request on its own, so ingest returns instantly. Best-effort by design."""
+    if not settings.ADMIN_API_KEY:
+        return
+    url = f"{settings.SELF_URL.rstrip('/')}/api/v1/project/sync-pending"
+    try:
+        import httpx
+        httpx.post(url, params={"project_id": project_id},
+                   headers={"X-Admin-Key": settings.ADMIN_API_KEY},
+                   timeout=httpx.Timeout(5.0, read=0.5))
+    except Exception:
+        pass   # the read-timeout is expected; the sync request is now running independently
+
+
+@router.post("/sync-pending", response_model=SubmissionResponse, summary="Background: push pending items to Label Studio in chunks (internal)")
+def sync_pending(project_id: str, x_admin_key: str | None = Header(default=None)):
+    """Push one chunk of a project's not-yet-synced ('pending') items into Label Studio,
+    mark them 'queued', and chain the next chunk. Self-triggered after ingest and by the
+    GET /results safety net — drains any backlog with no operator and no scheduler."""
+    _require_admin(x_admin_key)
+    db = get_client()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable.")
+    CHUNK = 500
+    sub = db.table("project_submissions").select("id,company,ls_project_id,eval_config").eq("id", project_id).limit(1).execute()
+    if not sub.data:
+        raise HTTPException(status_code=404, detail="Project not found.")
+    s = sub.data[0]
+    ec = s.get("eval_config")
+    if not ec:
+        return SubmissionResponse(ok=True, message="No config yet; nothing to sync.")
+
+    # Ensure the LS project exists once, up front (stored on the submission).
+    try:
+        from app.services import labelstudio as ls
+        label_config = ls.build_label_config(ec)
+        reviewers = int(ec.get("reviewers_per_item") or 1)
+        ls_pid = s.get("ls_project_id")
+        if not ls_pid:
+            title = f"{s.get('company') or 'Senebiclabs project'} — eval"
+            ls_pid = ls.create_project(title=title, label_config=label_config, reviewers=reviewers)
+            db.table("project_submissions").update({"ls_project_id": ls_pid}).eq("id", project_id).execute()
+    except Exception as exc:
+        logger.error("sync-pending setup failed for %s: %s", project_id, exc)
+        raise HTTPException(status_code=502, detail="Sync setup failed; will retry.")
+
+    # Atomically CLAIM a chunk: read pending, then transition only rows STILL 'pending'
+    # to 'queued'. Concurrent sync runs each claim a disjoint set (the status='pending'
+    # filter makes the row transition the lock), so items are never double-pushed to LS.
+    cand = (db.table("project_items").select("id,content")
+            .eq("project_id", project_id).eq("status", "pending").order("idx").limit(CHUNK).execute()).data or []
+    if not cand:
+        return SubmissionResponse(ok=True, message="Nothing pending to sync.")
+    claimed_ids = []
+    for i in range(0, len(cand), 100):
+        chunk_ids = [c["id"] for c in cand[i:i + 100]]
+        res = db.table("project_items").update({"status": "queued"}).in_("id", chunk_ids).eq("status", "pending").execute()
+        claimed_ids.extend(r["id"] for r in (res.data or []))
+    claimed = set(claimed_ids)
+    items = [c for c in cand if c["id"] in claimed]
+    if not items:
+        _kick_sync(project_id)     # a concurrent run took this chunk; keep draining
+        return SubmissionResponse(ok=True, message="Chunk already claimed by a concurrent sync.")
+
+    try:
+        ls.push_tasks(ls_pid, items)
+    except Exception as exc:
+        # Push failed — return the claimed items to 'pending' so they get re-synced.
+        for i in range(0, len(claimed_ids), 100):
+            db.table("project_items").update({"status": "pending"}).in_("id", claimed_ids[i:i + 100]).execute()
+        logger.error("sync-pending push failed for %s: %s", project_id, exc)
+        raise HTTPException(status_code=502, detail="Sync push failed; items returned to pending for retry.")
+
+    # More still pending? Chain the next chunk (a fresh request keeps full CPU on Cloud Run).
+    more = db.table("project_items").select("id").eq("project_id", project_id).eq("status", "pending").limit(1).execute()
+    if more.data:
+        _kick_sync(project_id)
+    logger.info("sync-pending: pushed %d items for %s (more=%s)", len(items), project_id, bool(more.data))
+    return SubmissionResponse(ok=True, message=f"Synced {len(items)} items.")
 
 
 @router.get("/results", summary="API: batch status + results (Bearer API key)")
@@ -635,6 +716,14 @@ def api_results(project_id: str, authorization: str | None = Header(default=None
     if not sub.data or sub.data[0].get("email") != email:
         raise HTTPException(status_code=403, detail="That project is not on this API key.")
     s = sub.data[0]
+    # Safety net: if anything is still waiting to reach Label Studio, nudge the background
+    # sync. Best-effort, so a poll never blocks — but it means a missed ingest-trigger
+    # self-heals on the client's next poll.
+    try:
+        if db.table("project_items").select("id").eq("project_id", project_id).eq("status", "pending").limit(1).execute().data:
+            _kick_sync(project_id)
+    except Exception:
+        pass
     total, done = _progress(db, project_id)
     stage = s.get("stage") or "submitted"
     out: dict = {"ok": True, "project_id": project_id, "status": stage, "total": total, "done": done}

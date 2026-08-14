@@ -713,18 +713,20 @@ def create_project(title: str, label_config: str = DEFAULT_LABEL_CONFIG, reviewe
     return pid
 
 
-def push_tasks(ls_project_id: int, items: list[dict]) -> int:
-    """Import items as tasks. Each item is {id, content}; we carry id as _item_id."""
+def push_tasks(ls_project_id: int, items: list[dict], chunk: int = 500) -> int:
+    """Import items as tasks. Each item is {id, content}; we carry id as _item_id.
+    Pushed in chunks so a bulk batch never exceeds Label Studio's import limits."""
     tasks = [{"data": {**(it.get("content") or {}), "_item_id": it["id"]}} for it in items]
     if not tasks:
         return 0
-    r = httpx.post(
-        f"{_base()}/api/projects/{ls_project_id}/import",
-        headers=_headers(),
-        json=tasks,
-        timeout=120,
-    )
-    r.raise_for_status()
+    for i in range(0, len(tasks), chunk):
+        r = httpx.post(
+            f"{_base()}/api/projects/{ls_project_id}/import",
+            headers=_headers(),
+            json=tasks[i:i + chunk],
+            timeout=120,
+        )
+        r.raise_for_status()
     return len(tasks)
 
 

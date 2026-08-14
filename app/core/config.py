@@ -51,6 +51,8 @@ class Settings(BaseSettings):
 
     # Public site URL — used to build customer portal magic-link emails
     SITE_URL: str = "https://senebiclabs.com"
+    # The API's own public URL, used to self-trigger the background /sync-pending run.
+    SELF_URL: str = "https://senebiclabs-api-777437555578.us-central1.run.app"
 
     # Portal magic-link signing secret — falls back to the Supabase service key
     PORTAL_SECRET: str | None = None

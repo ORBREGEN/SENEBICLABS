@@ -285,6 +285,12 @@ def ls_sync(body: SyncIn, x_admin_key: str | None = Header(default=None)):
         logger.error("LS sync failed: %s", exc)
         raise HTTPException(status_code=502, detail="Could not reach Label Studio. Check that it is running and LS_URL / LS_TOKEN are set.")
 
+    # Mark what we pushed as 'queued' (in LS, awaiting review) so the background
+    # /sync-pending never re-pushes the same items.
+    ids = [r["id"] for r in rows if r.get("id")]
+    for i in range(0, len(ids), 100):
+        db.table("project_items").update({"status": "queued"}).in_("id", ids[i:i + 100]).execute()
+
     return {"ok": True, "ls_project_id": ls_pid, "pushed": pushed}
 
 
