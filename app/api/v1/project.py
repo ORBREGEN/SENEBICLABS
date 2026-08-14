@@ -127,6 +127,11 @@ class ProjectMetaIn(BaseModel):
     difficulty: str | None = None
 
 
+class ReviewersIn(BaseModel):
+    project_id: str
+    reviewers_per_item: int
+
+
 class ClinicianIn(BaseModel):
     name: str
     email: EmailStr | None = None
@@ -534,6 +539,10 @@ def api_create_project(body: CreateProjectIn, authorization: str | None = Header
     except Exception as exc:
         raise HTTPException(status_code=422, detail=f"Invalid eval_config: {exc}")
     ec = dict(body.eval_config)
+    # How many clinicians review each item is our quality call, not the client's — it is
+    # the main cost/quality lever. Override whatever they sent with our default; the
+    # operator tunes it per project via POST /admin/reviewers.
+    ec["reviewers_per_item"] = int(settings.DEFAULT_REVIEWERS_PER_ITEM)
     if body.webhook_url:
         ec["_webhook_url"] = body.webhook_url
         ec.setdefault("_webhook_secret", secrets.token_hex(32))
@@ -915,6 +924,32 @@ def admin_set_meta(body: ProjectMetaIn, x_admin_key: str | None = Header(default
             )
         raise HTTPException(status_code=500, detail="Could not save.")
     return SubmissionResponse(ok=True, message="Saved.")
+
+
+@router.post("/admin/reviewers", response_model=SubmissionResponse, summary="Set how many clinicians review each item (admin)")
+def admin_set_reviewers(body: ReviewersIn, x_admin_key: str | None = Header(default=None)):
+    """We assign the reviewer count for quality; this lets the operator tune it per
+    project (e.g. 2 for a cost-sensitive pilot, 5 for a high-stakes safety eval)."""
+    _require_admin(x_admin_key)
+    db = get_client()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable.")
+    n = max(1, int(body.reviewers_per_item))
+    sub = db.table("project_submissions").select("eval_config,ls_project_id").eq("id", body.project_id).limit(1).execute()
+    if not sub.data:
+        raise HTTPException(status_code=404, detail="Project not found.")
+    ec = sub.data[0].get("eval_config") or {}
+    ec["reviewers_per_item"] = n
+    db.table("project_submissions").update({"eval_config": ec}).eq("id", body.project_id).execute()
+    # Apply to the live Label Studio project immediately if it exists (best-effort).
+    ls_pid = sub.data[0].get("ls_project_id")
+    if ls_pid:
+        try:
+            from app.services import labelstudio as ls
+            ls.update_project_config(ls_pid, ls.build_label_config(ec), reviewers=n)
+        except Exception as exc:
+            logger.warning("Reviewers set to %d for %s but LS update deferred: %s", n, body.project_id, exc)
+    return SubmissionResponse(ok=True, message=f"Set to {n} reviewer(s) per item.")
 
 
 @router.post("/admin/eval-config", response_model=SubmissionResponse, summary="Set a project's eval config / task schema (admin)")

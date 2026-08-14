@@ -137,7 +137,6 @@ KEY="your_api_key"`}</Code>
     "name": "Clinical response evaluation",
     "eval_config": {
       "title": "Clinical response review",
-      "reviewers_per_item": 3,
       "schema": {
         "input": "text",
         "context": [
@@ -258,10 +257,10 @@ KEY="your_api_key"`}</Code>
   ]
 }`}</Code>
           <p>
-            With <C>reviewers_per_item</C> above 1, each item is reviewed by several clinicians
-            and combined into a consensus. The report then adds a <C>qa</C> block with the mean
-            inter-reviewer agreement and the count of items where reviewers disagreed and an
-            expert adjudicated.
+            Senebiclabs assigns multiple clinicians to each item and combines them into a
+            consensus, so the number of reviewers is our quality decision, not something you set.
+            The report adds a <C>qa</C> block with the mean inter-reviewer agreement and the count
+            of items where reviewers disagreed and an expert adjudicated.
           </p>
           <div className="docs-callout">
             <p>
@@ -344,7 +343,6 @@ async def hook(request: Request):
             <li><C>context</C>: for text tasks, which data keys to show the clinician, in order.</li>
             <li><C>classes</C>: the label set used by <C>from_classes</C> and <C>structured</C> fields.</li>
             <li><C>case_id_field</C>: which item field ties a result back to your own record.</li>
-            <li><C>reviewers_per_item</C>: how many clinicians review each item (default 1). Above 1 produces a consensus plus agreement stats.</li>
           </ul>
           <p><C>fields</C> is a map of what the clinician fills. Each has a <C>type</C>:</p>
           <ul>

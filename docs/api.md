@@ -51,7 +51,6 @@ curl -X POST "$BASE/projects" \
     "name": "Clinical response evaluation",
     "eval_config": {
       "title": "Clinical response review",
-      "reviewers_per_item": 3,
       "schema": {
         "input": "text",
         "context": [
@@ -98,8 +97,6 @@ you want produced; the results come back as content-and-label pairs with no scor
 - `context` — text mode only: which data keys to show the clinician, in order.
 - `classes` — the label set used by `from_classes` and `structured` fields.
 - `case_id_field` — which item field ties a result back to your own record.
-- `reviewers_per_item` — how many clinicians review each item (default `1`). Above 1
-  produces a consensus plus inter-reviewer agreement stats in the report.
 - `fields` — a map of what the clinician fills. Each has a `type`:
   - `single` — choose one of `options`
   - `from_classes` — choose one of the project `classes`
@@ -194,10 +191,10 @@ When delivered:
 }
 ```
 
-With `reviewers_per_item` above 1, each item is reviewed by several clinicians and
-combined into a consensus. The report then adds a `qa` block with the mean
-inter-reviewer agreement and the count of items where reviewers disagreed and an
-expert adjudicated.
+Senebiclabs assigns multiple clinicians to each item and combines them into a consensus,
+so the number of reviewers is our quality decision, not something you set. The report adds
+a `qa` block with the mean inter-reviewer agreement and the count of items where reviewers
+disagreed and an expert adjudicated.
 
 **Scoring contract:** the accuracy `report` is computed only when items carry a
 `prediction` and the fields use these exact names: `verdict` (`Correct` / `Incorrect` /

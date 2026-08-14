@@ -53,6 +53,9 @@ class Settings(BaseSettings):
     SITE_URL: str = "https://senebiclabs.com"
     # The API's own public URL, used to self-trigger the background /sync-pending run.
     SELF_URL: str = "https://senebiclabs-api-777437555578.us-central1.run.app"
+    # Clinicians per item is OUR quality decision, not the client's. This default
+    # applies to every new project; the operator can tune it per project.
+    DEFAULT_REVIEWERS_PER_ITEM: int = 3
 
     # Portal magic-link signing secret — falls back to the Supabase service key
     PORTAL_SECRET: str | None = None
