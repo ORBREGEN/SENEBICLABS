@@ -125,7 +125,6 @@ export default function DevelopersPage() {
           <a href="/developers" className="active">API keys</a>
           <a href="/docs">Documentation</a>
           <a href="/docs#quickstart">Quickstart</a>
-          <a href="mailto:senebiclabs@gmail.com">Support</a>
         </nav>
         {token && !expired && acctEmail && (
           <div style={{ marginTop: 'auto', paddingTop: 22, borderTop: '1px solid var(--hairline)' }}>
