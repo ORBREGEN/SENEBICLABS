@@ -25,8 +25,18 @@ export default function DevelopersPage() {
   const [expired, setExpired] = useState(false)
 
   useEffect(() => {
-    const t = new URLSearchParams(window.location.search).get('token')
-    setToken(t)
+    const urlToken = new URLSearchParams(window.location.search).get('token')
+    if (urlToken) {
+      // Fresh magic link: start a session and clean the token out of the URL/history.
+      try { localStorage.setItem('sb_dev_token', urlToken) } catch {}
+      window.history.replaceState({}, '', '/developers')
+      setToken(urlToken)
+    } else {
+      // Returning visit: reuse the stored session if the link hasn't expired.
+      let stored: string | null = null
+      try { stored = localStorage.getItem('sb_dev_token') } catch {}
+      setToken(stored)
+    }
     setReady(true)
   }, [])
 
@@ -36,7 +46,10 @@ export default function DevelopersPage() {
       try {
         const res = await fetch(`/api/portal/keys?token=${encodeURIComponent(token)}`, { cache: 'no-store' })
         const data = await res.json()
-        if (res.status === 401) { setExpired(true); return }
+        if (res.status === 401) {
+          try { localStorage.removeItem('sb_dev_token') } catch {}
+          setExpired(true); return
+        }
         if (!res.ok) throw new Error(data.detail || data.message || 'Could not load your keys.')
         setAcctEmail(data.email)
         setKeys(data.keys || [])
@@ -87,6 +100,11 @@ export default function DevelopersPage() {
       if (!res.ok) { const d = await res.json(); throw new Error(d.detail || d.message || 'Could not revoke.') }
       setKeys(k => k.map(x => x.id === id ? { ...x, revoked: true } : x))
     } catch (e) { setError(e instanceof Error ? e.message : 'Could not revoke.') }
+  }
+
+  function signOut() {
+    try { localStorage.removeItem('sb_dev_token') } catch {}
+    setToken(null); setSent(false); setKeys([]); setNewKey(null); setAcctEmail(''); setExpired(false)
   }
 
   const wrap: React.CSSProperties = { maxWidth: 720, margin: '0 auto', padding: 'clamp(40px,8vw,90px) 22px 120px' }
@@ -142,7 +160,12 @@ export default function DevelopersPage() {
       {/* ── Token: console ── */}
       {token && !expired && (
         <>
-          {acctEmail && <p style={{ ...eyebrow, marginBottom: 26 }}>Signed in as {acctEmail}</p>}
+          {acctEmail && (
+            <p style={{ ...eyebrow, marginBottom: 26, display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+              <span>Signed in as {acctEmail}</span>
+              <button onClick={signOut} style={{ ...eyebrow, background: 'none', border: 0, cursor: 'pointer', color: 'var(--ink)', opacity: 0.7, padding: 0 }}>Sign out</button>
+            </p>
+          )}
 
           {/* the freshly-created key, shown once */}
           {newKey && (
