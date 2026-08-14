@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import '../docs/docs.css'
 
 const MONO = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace'
 
@@ -107,7 +108,6 @@ export default function DevelopersPage() {
     setToken(null); setSent(false); setKeys([]); setNewKey(null); setAcctEmail(''); setExpired(false)
   }
 
-  const wrap: React.CSSProperties = { maxWidth: 720, margin: '0 auto', padding: 'clamp(40px,8vw,90px) 22px 120px' }
   const eyebrow: React.CSSProperties = { fontFamily: MONO, fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--slate)' }
   const btn: React.CSSProperties = { fontFamily: MONO, fontSize: 12, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--navy)', background: 'var(--ink)', border: 0, borderRadius: 8, padding: '11px 20px', cursor: 'pointer' }
   const input: React.CSSProperties = { width: '100%', padding: '12px 14px', borderRadius: 8, border: '1px solid var(--hairline)', background: 'rgba(255,255,255,0.04)', color: 'var(--ink)', fontSize: 15, fontFamily: 'inherit' }
@@ -116,14 +116,29 @@ export default function DevelopersPage() {
   if (!ready) return null
 
   return (
-    <main style={wrap}>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 16, marginBottom: 34 }}>
-        <a href="/" style={{ fontSize: 18, fontWeight: 640, color: 'var(--ink)', textDecoration: 'none' }}>Senebiclabs</a>
-        <a href="/docs" style={{ ...eyebrow, color: 'var(--ink)', textDecoration: 'none', opacity: 0.75 }}>API reference →</a>
-      </div>
+    <div className="docs-shell">
+      {/* Sidebar */}
+      <aside className="docs-side" style={{ display: 'flex', flexDirection: 'column' }}>
+        <a href="/" className="docs-brand">Senebiclabs</a>
+        <div className="docs-brand-sub">Developers</div>
+        <nav className="docs-nav">
+          <a href="/developers" className="active">API keys</a>
+          <a href="/docs">Documentation</a>
+          <a href="/docs#quickstart">Quickstart</a>
+          <a href="mailto:senebiclabs@gmail.com">Support</a>
+        </nav>
+        {token && !expired && acctEmail && (
+          <div style={{ marginTop: 'auto', paddingTop: 22, borderTop: '1px solid var(--hairline)' }}>
+            <div style={{ fontSize: 12.5, color: 'var(--slate)', marginBottom: 8, wordBreak: 'break-all' }}>{acctEmail}</div>
+            <button onClick={signOut} style={{ fontFamily: MONO, fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink)', background: 'none', border: 0, padding: 0, cursor: 'pointer', opacity: 0.7 }}>Sign out →</button>
+          </div>
+        )}
+      </aside>
 
-      <span style={eyebrow}>Developers</span>
-      <h1 style={{ fontSize: 'clamp(28px,4.5vw,40px)', fontWeight: 620, letterSpacing: '-0.02em', margin: '10px 0 14px' }}>API keys</h1>
+      {/* Content */}
+      <main className="docs-main">
+      <span className="docs-eyebrow">Manage access</span>
+      <h1 style={{ margin: '10px 0 22px' }}>API keys</h1>
 
       {error && <p style={{ color: '#f87171', fontSize: 14, marginBottom: 16 }}>{error}</p>}
 
@@ -132,7 +147,7 @@ export default function DevelopersPage() {
         <>
           <p style={{ fontSize: 16, lineHeight: 1.6, color: 'rgba(255,255,255,0.72)', maxWidth: '54ch', margin: '0 0 24px' }}>
             Enter your email and we&rsquo;ll send you a sign-in link to create and manage your API keys.
-            No password — the link verifies your address.
+            No password. The link verifies your address.
           </p>
           <form onSubmit={sendLink} style={{ display: 'flex', gap: 10, flexWrap: 'wrap', maxWidth: 460 }}>
             <input style={{ ...input, flex: 1, minWidth: 240 }} type="email" required placeholder="you@company.com" value={email} onChange={e => setEmail(e.target.value)} />
@@ -160,13 +175,6 @@ export default function DevelopersPage() {
       {/* ── Token: console ── */}
       {token && !expired && (
         <>
-          {acctEmail && (
-            <p style={{ ...eyebrow, marginBottom: 26, display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
-              <span>Signed in as {acctEmail}</span>
-              <button onClick={signOut} style={{ ...eyebrow, background: 'none', border: 0, cursor: 'pointer', color: 'var(--ink)', opacity: 0.7, padding: 0 }}>Sign out</button>
-            </p>
-          )}
-
           {/* the freshly-created key, shown once */}
           {newKey && (
             <div style={{ ...card, borderColor: 'var(--ink)', marginBottom: 22 }}>
@@ -184,7 +192,7 @@ export default function DevelopersPage() {
           <div style={{ ...card, marginBottom: 26 }}>
             <span style={eyebrow}>Create a key</span>
             <div style={{ display: 'flex', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
-              <input style={{ ...input, flex: 1, minWidth: 200 }} placeholder="Label (optional) — e.g. production" value={label} onChange={e => setLabel(e.target.value)} />
+              <input style={{ ...input, flex: 1, minWidth: 200 }} placeholder="Label (optional), e.g. production" value={label} onChange={e => setLabel(e.target.value)} />
               <button style={{ ...btn, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={createKey}>{busy ? 'Creating…' : 'Create API key'}</button>
             </div>
           </div>
@@ -213,6 +221,7 @@ export default function DevelopersPage() {
           </p>
         </>
       )}
-    </main>
+      </main>
+    </div>
   )
 }
