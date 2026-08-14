@@ -57,12 +57,12 @@ export default function DocsPage() {
             optionally receive a signed webhook when a clinician-reviewed batch is delivered.
           </p>
 
-          <p>Two kinds of project run on the same pipeline; your task config decides which:</p>
+          <p>Two shapes of project, set by your config:</p>
           <ul>
             <li><b>Evaluation:</b> each item carries a model output. Clinicians grade it, and results include an accuracy and safety scorecard.</li>
-            <li><b>Labeling:</b> each item carries raw data. Clinicians apply your label schema, and results come back as clean content-and-label pairs to train on.</li>
+            <li><b>Creation:</b> each item carries raw data or prompts. Clinicians label it, write gold answers, or rank model outputs, and you get clean training and preference data.</li>
           </ul>
-          <p>The only difference is your task config and whether there is a model output to grade.</p>
+          <p>The only difference is whether there is a model output to grade.</p>
 
           <h3>Base URL</h3>
           <Code>{BASE}</Code>
@@ -170,7 +170,7 @@ KEY="your_api_key"`}</Code>
           <p>
             This example is an <b>evaluation</b> project: each item carries a <C>prediction</C>,
             clinicians return a <C>verdict</C> of <C>Correct</C>, <C>Incorrect</C>, or <C>Partial</C>,
-            and the report scores accuracy. For a <b>labeling</b> project, omit <C>prediction</C> and set
+            and the report scores accuracy. For a <b>creation</b> project, omit <C>prediction</C> and set
             <C>fields</C> to the labels you want produced; the results come back as content-and-label
             pairs with no scorecard.
           </p>
@@ -270,7 +270,7 @@ KEY="your_api_key"`}</Code>
               <C>Incorrect</C> / <C>Partial</C>), <C>correct_label</C> (the corrected class for a wrong
               verdict), and <C>critical_miss</C> (a <C>structured</C> field that populates the report&rsquo;s
               critical misses). A wrong verdict with no <C>correct_label</C> is excluded, never guessed. A
-              <b>labeling</b> project ignores all of this and just returns every reviewed item in <C>items</C>
+              <b>creation</b> project ignores all of this and just returns every reviewed item in <C>items</C>
               as a content-and-label pair to train on.
             </p>
           </div>

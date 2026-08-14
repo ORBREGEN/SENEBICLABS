@@ -7,14 +7,14 @@ Create a project, push items, poll for status and results, and optionally receiv
 > The canonical, always-current version of this reference is the web page at
 > **https://senebiclabs.com/docs**. This file mirrors it.
 
-Two kinds of project run on the same pipeline; your task config decides which:
+Two shapes of project, set by your config:
 
-- **Evaluation** — each item carries a model output. Clinicians grade it, and results
+- **Evaluation:** each item carries a model output. Clinicians grade it, and results
   include an accuracy and safety scorecard.
-- **Labeling** — each item carries raw data. Clinicians apply your label schema, and
-  results come back as clean content-and-label pairs to train on.
+- **Creation:** each item carries raw data or prompts. Clinicians label it, write gold
+  answers, or rank model outputs, and you get clean training and preference data.
 
-The only difference is your task config and whether there is a model output to grade.
+The only difference is whether there is a model output to grade.
 
 **Base URL**
 
@@ -88,7 +88,7 @@ password.
 
 This example is an **evaluation** project: each item carries a `prediction`, clinicians
 return a `verdict` of `Correct` / `Incorrect` / `Partial`, and the report scores
-accuracy. For a **labeling** project, omit `prediction` and set `fields` to the labels
+accuracy. For a **creation** project, omit `prediction` and set `fields` to the labels
 you want produced; the results come back as content-and-label pairs with no scorecard.
 
 ### Config reference
@@ -130,7 +130,7 @@ curl -X POST "$BASE/ingest" \
 ```
 
 - `items` — array of objects, fields must match the task config. An evaluation item
-  carries the model output as `prediction`; a labeling item just carries the raw data.
+  carries the model output as `prediction`; a creation item just carries the raw data.
 
 ### Idempotency
 
@@ -203,7 +203,7 @@ expert adjudicated.
 `prediction` and the fields use these exact names: `verdict` (`Correct` / `Incorrect` /
 `Partial`), `correct_label` (the corrected class for a wrong verdict), and
 `critical_miss` (a `structured` field that populates the report's critical misses). A
-wrong verdict with no `correct_label` is excluded, never guessed. A **labeling** project
+wrong verdict with no `correct_label` is excluded, never guessed. A **creation** project
 ignores all of this and just returns every reviewed item in `items` as a
 content-and-label pair to train on.
 
