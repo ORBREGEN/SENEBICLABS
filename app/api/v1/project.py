@@ -584,6 +584,15 @@ def api_ingest(
         raise HTTPException(status_code=403, detail="That project is not on this API key.")
     if not body.items:
         return SubmissionResponse(ok=True, message="No items to add.")
+    if len(body.items) > settings.MAX_ITEMS_PER_INGEST:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"Batch too large: {len(body.items)} items. Send at most "
+                f"{settings.MAX_ITEMS_PER_INGEST} per call — split a big upload into several "
+                f"calls (each with its own Idempotency-Key), or use manifest-based ingestion for bulk."
+            ),
+        )
 
     ec = sub.data[0].get("eval_config") or {}
 

@@ -56,6 +56,9 @@ class Settings(BaseSettings):
     # Clinicians per item is OUR quality decision, not the client's. This default
     # applies to every new project; the operator can tune it per project.
     DEFAULT_REVIEWERS_PER_ITEM: int = 3
+    # Cap items per /ingest call so one monster request fails cleanly (a clear 413)
+    # instead of dropping at Cloud Run's payload limit. Bulk = many calls, or a manifest.
+    MAX_ITEMS_PER_INGEST: int = 5000
 
     # Portal magic-link signing secret — falls back to the Supabase service key
     PORTAL_SECRET: str | None = None
