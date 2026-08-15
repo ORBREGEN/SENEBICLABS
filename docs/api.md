@@ -144,11 +144,29 @@ two identical calls would create duplicates.
 
 Response on a new batch: `{ "ok": true, "message": "Ingested 2 items." }`
 
-### Bulk
+### Bulk (data in your storage)
 
-Send large batches in a single call. `/ingest` returns immediately even for thousands
-of items; the data is prepared for clinician review in the background, so you are never
-blocked waiting on it. Poll `GET /results` for progress.
+For large volumes, don't push the data through the API at all. Leave it in your storage
+(e.g. S3) and send a `manifest_url` instead of `items`. A manifest is a JSONL file where
+each line is one item.
+
+```bash
+curl -s -X POST "$BASE/ingest" \
+  -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+  -d '{
+    "project_id": "...",
+    "source": { "manifest_url": "https://your-bucket.s3.../manifest.jsonl", "sample": 1000 }
+  }'
+```
+
+We stream the manifest and review a random `sample` of it (default 1000). The data itself
+never passes through the API — a clinician's browser streams each item straight from your
+storage (the bytes stay on your bill). Any size works and it cannot overload us. Poll
+`GET /results` as usual.
+
+For an ongoing feed, use a **scoped read-only credential** to your bucket (so URLs don't
+expire mid-review), send a new manifest per cycle, and we return a rolling scorecard on
+each sample.
 
 ---
 

@@ -211,12 +211,23 @@ KEY="your_api_key"`}</Code>
           </p>
           <h3>Response</h3>
           <Code>{`{ "ok": true, "message": "Ingested 2 items." }`}</Code>
-          <h3>Bulk</h3>
+          <h3>Bulk (data in your storage)</h3>
           <p>
-            Send large batches in a single call. <C>/ingest</C> returns immediately even for
-            thousands of items; the data is prepared for clinician review in the background, so
-            you are never blocked waiting on it. Poll <a href="#results" style={{ color: '#fff' }}>results</a>{' '}
-            for progress.
+            For large volumes, don&rsquo;t push the data through the API at all. Leave it in your
+            storage (e.g. S3) and send a <C>manifest_url</C> instead of <C>items</C>. A manifest is a
+            JSONL file where each line is one item.
+          </p>
+          <Code>{`curl -s -X POST "$BASE/ingest" \\
+  -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \\
+  -d '{
+    "project_id": "...",
+    "source": { "manifest_url": "https://your-bucket.s3.../manifest.jsonl", "sample": 1000 }
+  }'`}</Code>
+          <p>
+            We stream the manifest and review a random <C>sample</C> of it (default 1000). The data
+            itself never passes through the API — a clinician&rsquo;s browser streams each item straight
+            from your storage (bytes stay on your bill). Any size works and it cannot overload us.
+            Poll <a href="#results" style={{ color: '#fff' }}>results</a> as usual.
           </p>
         </section>
 
