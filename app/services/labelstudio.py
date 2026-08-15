@@ -566,10 +566,12 @@ def build_label_config(eval_config: dict) -> str:
     input_type = str(schema.get("input") or eval_config.get("input") or "image").lower()
 
     title = _esc(eval_config.get("title", "Review"))
-    default_sub = (
-        "Review the response and complete each field." if input_type == "text"
-        else "Review the image and complete each field."
-    )
+    if input_type == "text":
+        default_sub = "Review the response and complete each field."
+    elif input_type in ("audio", "video"):
+        default_sub = "Review the recording and complete each field."
+    else:
+        default_sub = "Review the image and complete each field."
     subtitle = _esc(eval_config.get("subtitle", default_sub))
     header = (
         f'<View style="{_HEAD}"><Header value="{title}" style="{_TITLE}"/>'
@@ -597,6 +599,27 @@ def build_label_config(eval_config: dict) -> str:
             blocks.append(
                 f'<View style="{style}"><Header value="{lbl}" style="{_CAPS}"/>'
                 f'<Text name="{anchor}" value="${_esc(ckey)}" style="{_BODY}"/></View>'
+            )
+        media = "".join(blocks)
+    elif input_type in ("audio", "video"):
+        # Recording review: the media player is the "image"-named anchor the controls
+        # bind to; any other context keys render as read-only text (transcript, prompt).
+        # The clip streams straight from its URL (e.g. a pre-signed S3 link) — the bytes
+        # never pass through us. Each item carries the URL under `audio`/`video` (or a
+        # custom schema.media_key).
+        tag = "Audio" if input_type == "audio" else "Video"
+        media_key = _esc(schema.get("media_key") or input_type)
+        extra = ' hotkey="space"' if tag == "Audio" else ' width="100%"'
+        context = schema.get("context") or []
+        blocks = [f'<View style="{_CARD_HI}"><{tag} name="image" value="${media_key}"{extra}/></View>']
+        for c in context:
+            ckey = c.get("key")
+            if not ckey or ckey == media_key:
+                continue
+            lbl = _esc(c.get("label") or ckey)
+            blocks.append(
+                f'<View style="{_CARD}"><Header value="{lbl}" style="{_CAPS}"/>'
+                f'<Text name="{_esc(ckey)}" value="${_esc(ckey)}" style="{_BODY}"/></View>'
             )
         media = "".join(blocks)
     else:
