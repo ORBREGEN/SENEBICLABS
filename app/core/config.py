@@ -59,6 +59,10 @@ class Settings(BaseSettings):
     # Cap items per /ingest call so one monster request fails cleanly (a clear 413)
     # instead of dropping at Cloud Run's payload limit. Bulk = many calls, or a manifest.
     MAX_ITEMS_PER_INGEST: int = 5000
+    # Manifest (bulk) ingestion samples a bounded review set from the client's data,
+    # so clinician load and Label Studio stay steady no matter how large the source is.
+    DEFAULT_SAMPLE_SIZE: int = 1000
+    MAX_SAMPLE_SIZE: int = 10000
 
     # Portal magic-link signing secret — falls back to the Supabase service key
     PORTAL_SECRET: str | None = None

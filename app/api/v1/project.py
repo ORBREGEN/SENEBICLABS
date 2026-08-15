@@ -147,10 +147,22 @@ class AssignClinicianIn(BaseModel):
     clinician_id: str
 
 
+class SourceIn(BaseModel):
+    manifest_url: str                # a JSONL manifest in the client's storage (e.g. a pre-signed S3 URL)
+    sample: int | None = None        # review a random sample of this many items (default/cap applied)
+
+
 class IngestIn(BaseModel):
     project_id: str
-    items: list[dict]
+    items: list[dict] | None = None  # inline items (small batches)
+    source: SourceIn | None = None   # OR a manifest pointing at bulk data in the client's storage
     webhook_url: str | None = None   # optional: we POST results here when the batch is delivered
+
+
+class IngestSourceIn(BaseModel):
+    project_id: str
+    manifest_url: str
+    sample: int | None = None
 
 
 class CreateProjectIn(BaseModel):
@@ -582,6 +594,41 @@ def api_ingest(
     sub = db.table("project_submissions").select("id,email,eval_config").eq("id", body.project_id).limit(1).execute()
     if not sub.data or sub.data[0].get("email") != email:
         raise HTTPException(status_code=403, detail="That project is not on this API key.")
+    ec = sub.data[0].get("eval_config") or {}
+
+    # Idempotency (both paths): a repeated batch key is a retry — do not ingest twice.
+    if idempotency_key and idempotency_key in (ec.get("_ingest_keys") or []):
+        return SubmissionResponse(ok=True, message="Batch already ingested (idempotent).")
+
+    # Register the delivery webhook (both paths).
+    if body.webhook_url:
+        ec["_webhook_url"] = body.webhook_url
+        ec.setdefault("_webhook_secret", secrets.token_hex(32))
+        db.table("project_submissions").update({"eval_config": ec}).eq("id", body.project_id).execute()
+
+    # ── Bulk path: a manifest URL pointing at data in the client's storage (e.g. S3). ──
+    # The data never flows through this API. We stream the manifest in the background,
+    # sample a bounded review set, and ingest lightweight references.
+    if body.source and body.source.manifest_url:
+        try:
+            import httpx
+            with httpx.stream("GET", body.source.manifest_url, timeout=15) as r:
+                r.raise_for_status()
+                next(r.iter_lines(), None)
+        except Exception as exc:
+            logger.warning("Manifest not reachable for %s: %s", body.project_id, exc)
+            raise HTTPException(status_code=400, detail="Could not read manifest_url. Check the URL is correct and readable (e.g. a valid pre-signed S3 URL).")
+        if idempotency_key:
+            keys = ec.get("_ingest_keys") or []
+            keys.append(idempotency_key)
+            ec["_ingest_keys"] = keys
+            db.table("project_submissions").update({"eval_config": ec}).eq("id", body.project_id).execute()
+        _kick_ingest_source(body.project_id, body.source.manifest_url, body.source.sample)
+        n = min(int(body.source.sample or settings.DEFAULT_SAMPLE_SIZE), settings.MAX_SAMPLE_SIZE)
+        logger.info("API ingest (manifest) for %s: sampling up to %d", body.project_id, n)
+        return SubmissionResponse(ok=True, message=f"Ingesting from manifest — reviewing a sample of up to {n} items.")
+
+    # ── Inline path: items in the request body (small batches). ──
     if not body.items:
         return SubmissionResponse(ok=True, message="No items to add.")
     if len(body.items) > settings.MAX_ITEMS_PER_INGEST:
@@ -594,19 +641,7 @@ def api_ingest(
             ),
         )
 
-    ec = sub.data[0].get("eval_config") or {}
-
-    # Idempotency: if this batch key was already processed, don't insert again — a
-    # retried request then has the effect of a single ingest. (Key recorded after insert.)
-    if idempotency_key and idempotency_key in (ec.get("_ingest_keys") or []):
-        return SubmissionResponse(ok=True, message="Batch already ingested (idempotent).")
-
     _guard_item_keys(db, body.project_id, body.items)
-
-    if body.webhook_url:
-        ec["_webhook_url"] = body.webhook_url
-        ec.setdefault("_webhook_secret", secrets.token_hex(32))
-        db.table("project_submissions").update({"eval_config": ec}).eq("id", body.project_id).execute()
 
     try:
         existing = (
@@ -615,26 +650,19 @@ def api_ingest(
         )
         start = (existing.data[0]["idx"] + 1) if existing.data else 0
         rows = [{"project_id": body.project_id, "idx": start + i, "content": c} for i, c in enumerate(body.items)]
-        for i in range(0, len(rows), 500):        # chunked so a bulk batch never exceeds the payload limit
+        for i in range(0, len(rows), 500):
             db.table("project_items").insert(rows[i:i + 500]).execute()
     except Exception as exc:
         logger.error("API ingest failed: %s", exc)
         raise HTTPException(status_code=500, detail="Could not add items.")
 
-    # Record the idempotency key only AFTER a successful insert, so a crash mid-insert
-    # never marks a batch as done when it is not.
     if idempotency_key:
         keys = ec.get("_ingest_keys") or []
         keys.append(idempotency_key)
         ec["_ingest_keys"] = keys
         db.table("project_submissions").update({"eval_config": ec}).eq("id", body.project_id).execute()
 
-    # Bulk-safe sync: do NOT push to Label Studio inline — that blocks the request and
-    # times out on large batches. Items land as 'pending'; a background /sync-pending run
-    # pushes them to LS in chunks. Kick it off now (best-effort); GET /results re-kicks if
-    # anything is still pending, so nothing gets stuck.
     _kick_sync(body.project_id)
-
     logger.info("API ingest: %d items to %s (queued for background sync)", len(body.items), body.project_id)
     return SubmissionResponse(ok=True, message=f"Ingested {len(body.items)} items.")
 
@@ -653,6 +681,20 @@ def _kick_sync(project_id: str) -> None:
                    timeout=httpx.Timeout(5.0, read=0.5))
     except Exception:
         pass   # the read-timeout is expected; the sync request is now running independently
+
+
+def _kick_ingest_source(project_id: str, manifest_url: str, sample: int | None) -> None:
+    """Fire-and-forget trigger for the background manifest ingest (stream + sample)."""
+    if not settings.ADMIN_API_KEY:
+        return
+    url = f"{settings.SELF_URL.rstrip('/')}/api/v1/project/ingest-source"
+    try:
+        import httpx
+        httpx.post(url, json={"project_id": project_id, "manifest_url": manifest_url, "sample": sample},
+                   headers={"X-Admin-Key": settings.ADMIN_API_KEY},
+                   timeout=httpx.Timeout(8.0, read=0.5))
+    except Exception:
+        pass
 
 
 @router.post("/sync-pending", response_model=SubmissionResponse, summary="Background: push pending items to Label Studio in chunks (internal)")
@@ -720,6 +762,77 @@ def sync_pending(project_id: str, x_admin_key: str | None = Header(default=None)
         _kick_sync(project_id)
     logger.info("sync-pending: pushed %d items for %s (more=%s)", len(items), project_id, bool(more.data))
     return SubmissionResponse(ok=True, message=f"Synced {len(items)} items.")
+
+
+@router.post("/ingest-source", response_model=SubmissionResponse, summary="Background: stream a manifest, sample, and ingest references (internal)")
+def ingest_source(body: IngestSourceIn, x_admin_key: str | None = Header(default=None)):
+    """Stream a JSONL manifest from the client's storage, reservoir-sample a bounded
+    review set, and ingest those as pending items. The bulk data itself never flows
+    through this API — only the manifest (references) is read here, then the sample is
+    pushed to Label Studio by the usual /sync-pending run. Each manifest line is one
+    item (a JSON object whose fields match the task config, e.g. {case_id, audio_url})."""
+    _require_admin(x_admin_key)
+    db = get_client()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable.")
+    sub = db.table("project_submissions").select("eval_config").eq("id", body.project_id).limit(1).execute()
+    if not sub.data:
+        raise HTTPException(status_code=404, detail="Project not found.")
+    ec = sub.data[0].get("eval_config") or {}
+    try:
+        from app.services import labelstudio as ls
+        required = ls.required_data_keys(ec)
+    except Exception:
+        required = []
+
+    import httpx as _httpx, json as _json, random
+    target = min(int(body.sample or settings.DEFAULT_SAMPLE_SIZE), settings.MAX_SAMPLE_SIZE)
+    reservoir: list[dict] = []
+    n_seen = skipped = 0
+    try:
+        with _httpx.stream("GET", body.manifest_url, timeout=_httpx.Timeout(30.0, read=None)) as r:
+            r.raise_for_status()
+            for line in r.iter_lines():
+                line = (line or "").strip()
+                if not line:
+                    continue
+                try:
+                    obj = _json.loads(line)
+                except Exception:
+                    skipped += 1
+                    continue
+                if not isinstance(obj, dict) or (required and any(not obj.get(k) for k in required)):
+                    skipped += 1
+                    continue
+                n_seen += 1
+                # Reservoir sampling: a uniform random sample of `target` items in a
+                # single streaming pass, without loading the whole manifest into memory.
+                if len(reservoir) < target:
+                    reservoir.append(obj)
+                else:
+                    j = random.randint(0, n_seen - 1)
+                    if j < target:
+                        reservoir[j] = obj
+    except Exception as exc:
+        logger.error("ingest-source read failed for %s: %s", body.project_id, exc)
+        raise HTTPException(status_code=502, detail="Could not read the manifest.")
+
+    if not reservoir:
+        logger.warning("ingest-source: no usable items for %s (skipped %d)", body.project_id, skipped)
+        return SubmissionResponse(ok=True, message=f"Manifest had no usable items (skipped {skipped}).")
+
+    existing = (
+        db.table("project_items").select("idx").eq("project_id", body.project_id)
+        .order("idx", desc=True).limit(1).execute()
+    )
+    start = (existing.data[0]["idx"] + 1) if existing.data else 0
+    rows = [{"project_id": body.project_id, "idx": start + i, "content": c} for i, c in enumerate(reservoir)]
+    for i in range(0, len(rows), 500):
+        db.table("project_items").insert(rows[i:i + 500]).execute()
+
+    _kick_sync(body.project_id)
+    logger.info("ingest-source: sampled %d of %d for %s (skipped %d)", len(reservoir), n_seen, body.project_id, skipped)
+    return SubmissionResponse(ok=True, message=f"Ingested a sample of {len(reservoir)} from {n_seen} manifest items.")
 
 
 @router.get("/results", summary="API: batch status + results (Bearer API key)")
