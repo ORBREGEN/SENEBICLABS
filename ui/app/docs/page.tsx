@@ -350,7 +350,7 @@ async def hook(request: Request):
             The <C>eval_config</C> defines what clinicians see and fill in. Key fields:
           </p>
           <ul>
-            <li><C>input</C>: <C>text</C> (shows the <C>context</C> fields) or <C>image</C> (each item needs an <C>image</C> URL).</li>
+            <li><C>input</C>: <C>text</C> (shows the <C>context</C> fields), <C>image</C> (each item needs an <C>image</C> URL), or <C>audio</C> / <C>video</C> (each item needs an <C>audio</C> / <C>video</C> URL; a clinician plays it, streamed straight from your storage).</li>
             <li><C>context</C>: for text tasks, which data keys to show the clinician, in order.</li>
             <li><C>classes</C>: the label set used by <C>from_classes</C> and <C>structured</C> fields.</li>
             <li><C>case_id_field</C>: which item field ties a result back to your own record.</li>

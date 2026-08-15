@@ -92,8 +92,9 @@ you want produced; the results come back as content-and-label pairs with no scor
 
 ### Config reference
 
-- `input` — `"text"` (shows the `context` fields) or `"image"` (each item needs an
-  `image` URL).
+- `input` — `"text"` (shows the `context` fields), `"image"` (each item needs an
+  `image` URL), or `"audio"` / `"video"` (each item needs an `audio` / `video` URL; a
+  clinician plays it, streamed straight from your storage).
 - `context` — text mode only: which data keys to show the clinician, in order.
 - `classes` — the label set used by `from_classes` and `structured` fields.
 - `case_id_field` — which item field ties a result back to your own record.
