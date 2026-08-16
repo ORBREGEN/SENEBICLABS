@@ -36,6 +36,20 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _stale(iso: str | None, minutes: int) -> bool:
+    """True if an ISO timestamp is older than `minutes` ago (or missing/unparseable).
+    Used to decide whether a background manifest ingest looks stuck and should be re-fired."""
+    if not iso:
+        return True
+    try:
+        t = datetime.fromisoformat(iso)
+        if t.tzinfo is None:
+            t = t.replace(tzinfo=timezone.utc)
+    except Exception:
+        return True
+    return (datetime.now(timezone.utc) - t) > timedelta(minutes=minutes)
+
+
 def _resolve_labeler(db, code: str | None) -> dict | None:
     """Resolve a work access code to a labeler.
 
@@ -163,6 +177,7 @@ class IngestSourceIn(BaseModel):
     project_id: str
     manifest_url: str
     sample: int | None = None
+    key: str | None = None           # the batch's idempotency key — recorded on success so retries skip
 
 
 class CreateProjectIn(BaseModel):
@@ -618,12 +633,24 @@ def api_ingest(
         except Exception as exc:
             logger.warning("Manifest not reachable for %s: %s", body.project_id, exc)
             raise HTTPException(status_code=400, detail="Could not read manifest_url. Check the URL is correct and readable (e.g. a valid pre-signed S3 URL).")
-        if idempotency_key:
-            keys = ec.get("_ingest_keys") or []
-            keys.append(idempotency_key)
-            ec["_ingest_keys"] = keys
-            db.table("project_submissions").update({"eval_config": ec}).eq("id", body.project_id).execute()
-        _kick_ingest_source(body.project_id, body.source.manifest_url, body.source.sample)
+        # If the same manifest job is already in flight (recent pending marker), this call
+        # is a client retry — don't fire a second worker. The safety net re-fires only if
+        # the marker goes stale (the original trigger was missed or its worker died).
+        mp = ec.get("_manifest_pending")
+        if idempotency_key and mp and mp.get("key") == idempotency_key and not _stale(mp.get("at"), settings.MANIFEST_STALE_MINUTES):
+            n = min(int(body.source.sample or settings.DEFAULT_SAMPLE_SIZE), settings.MAX_SAMPLE_SIZE)
+            return SubmissionResponse(ok=True, message=f"Already ingesting from this manifest — reviewing a sample of up to {n} items.")
+        # Record the pending marker (NOT the idempotency key — that goes on only when the
+        # worker finishes, so a missed trigger can still be retried). This survives a lost
+        # background trigger: GET /results re-fires the worker while this marker is unfinished.
+        ec["_manifest_pending"] = {
+            "manifest_url": body.source.manifest_url,
+            "sample": body.source.sample,
+            "key": idempotency_key,
+            "at": _now_iso(),
+        }
+        db.table("project_submissions").update({"eval_config": ec}).eq("id", body.project_id).execute()
+        _kick_ingest_source(body.project_id, body.source.manifest_url, body.source.sample, idempotency_key)
         n = min(int(body.source.sample or settings.DEFAULT_SAMPLE_SIZE), settings.MAX_SAMPLE_SIZE)
         logger.info("API ingest (manifest) for %s: sampling up to %d", body.project_id, n)
         return SubmissionResponse(ok=True, message=f"Ingesting from manifest — reviewing a sample of up to {n} items.")
@@ -683,18 +710,36 @@ def _kick_sync(project_id: str) -> None:
         pass   # the read-timeout is expected; the sync request is now running independently
 
 
-def _kick_ingest_source(project_id: str, manifest_url: str, sample: int | None) -> None:
+def _kick_ingest_source(project_id: str, manifest_url: str, sample: int | None, key: str | None = None) -> None:
     """Fire-and-forget trigger for the background manifest ingest (stream + sample)."""
     if not settings.ADMIN_API_KEY:
         return
     url = f"{settings.SELF_URL.rstrip('/')}/api/v1/project/ingest-source"
     try:
         import httpx
-        httpx.post(url, json={"project_id": project_id, "manifest_url": manifest_url, "sample": sample},
+        httpx.post(url, json={"project_id": project_id, "manifest_url": manifest_url, "sample": sample, "key": key},
                    headers={"X-Admin-Key": settings.ADMIN_API_KEY},
                    timeout=httpx.Timeout(8.0, read=0.5))
     except Exception:
         pass
+
+
+def _finalize_manifest_job(db, project_id: str, key: str | None) -> None:
+    """Mark a manifest ingest complete: record its idempotency key (so any retry skips) and
+    clear the pending marker (so the /results safety net stops re-firing it). Reloads
+    eval_config first so we don't clobber a concurrent update (e.g. webhook registration)."""
+    try:
+        cur = db.table("project_submissions").select("eval_config").eq("id", project_id).limit(1).execute()
+        ec = (cur.data[0].get("eval_config") if cur.data else None) or {}
+        if key:
+            keys = ec.get("_ingest_keys") or []
+            if key not in keys:
+                keys.append(key)
+            ec["_ingest_keys"] = keys
+        ec.pop("_manifest_pending", None)
+        db.table("project_submissions").update({"eval_config": ec}).eq("id", project_id).execute()
+    except Exception as exc:
+        logger.error("finalize manifest job failed for %s: %s", project_id, exc)
 
 
 @router.post("/sync-pending", response_model=SubmissionResponse, summary="Background: push pending items to Label Studio in chunks (internal)")
@@ -779,6 +824,10 @@ def ingest_source(body: IngestSourceIn, x_admin_key: str | None = Header(default
     if not sub.data:
         raise HTTPException(status_code=404, detail="Project not found.")
     ec = sub.data[0].get("eval_config") or {}
+    # Idempotency: a completed job recorded its key here, so a re-fire (client retry or
+    # the /results safety net) is a no-op instead of ingesting a second sample.
+    if body.key and body.key in (ec.get("_ingest_keys") or []):
+        return SubmissionResponse(ok=True, message="Manifest already ingested (idempotent).")
     try:
         from app.services import labelstudio as ls
         required = ls.required_data_keys(ec)
@@ -788,11 +837,18 @@ def ingest_source(body: IngestSourceIn, x_admin_key: str | None = Header(default
     import httpx as _httpx, json as _json, random
     target = min(int(body.sample or settings.DEFAULT_SAMPLE_SIZE), settings.MAX_SAMPLE_SIZE)
     reservoir: list[dict] = []
-    n_seen = skipped = 0
+    n_seen = skipped = lines_read = 0
+    capped = False
     try:
         with _httpx.stream("GET", body.manifest_url, timeout=_httpx.Timeout(30.0, read=None)) as r:
             r.raise_for_status()
             for line in r.iter_lines():
+                # Hard cap on lines read so a pathologically huge manifest can't run the
+                # worker forever — we sample from what we've read and stop.
+                lines_read += 1
+                if lines_read > settings.MAX_MANIFEST_LINES:
+                    capped = True
+                    break
                 line = (line or "").strip()
                 if not line:
                     continue
@@ -818,6 +874,9 @@ def ingest_source(body: IngestSourceIn, x_admin_key: str | None = Header(default
         raise HTTPException(status_code=502, detail="Could not read the manifest.")
 
     if not reservoir:
+        # A clean read that yielded nothing usable is still a completed job — finalize so
+        # it isn't retried forever.
+        _finalize_manifest_job(db, body.project_id, body.key)
         logger.warning("ingest-source: no usable items for %s (skipped %d)", body.project_id, skipped)
         return SubmissionResponse(ok=True, message=f"Manifest had no usable items (skipped {skipped}).")
 
@@ -830,9 +889,12 @@ def ingest_source(body: IngestSourceIn, x_admin_key: str | None = Header(default
     for i in range(0, len(rows), 500):
         db.table("project_items").insert(rows[i:i + 500]).execute()
 
+    # Success: record the key and clear the pending marker, then push the sample to LS.
+    _finalize_manifest_job(db, body.project_id, body.key)
     _kick_sync(body.project_id)
-    logger.info("ingest-source: sampled %d of %d for %s (skipped %d)", len(reservoir), n_seen, body.project_id, skipped)
-    return SubmissionResponse(ok=True, message=f"Ingested a sample of {len(reservoir)} from {n_seen} manifest items.")
+    seen_note = f"{n_seen}+ (line cap reached)" if capped else str(n_seen)
+    logger.info("ingest-source: sampled %d of %s for %s (skipped %d, capped=%s)", len(reservoir), seen_note, body.project_id, skipped, capped)
+    return SubmissionResponse(ok=True, message=f"Ingested a sample of {len(reservoir)} from {seen_note} manifest items.")
 
 
 @router.get("/results", summary="API: batch status + results (Bearer API key)")
@@ -843,7 +905,7 @@ def api_results(project_id: str, authorization: str | None = Header(default=None
     db = get_client()
     if db is None:
         raise HTTPException(status_code=503, detail="Database unavailable.")
-    sub = db.table("project_submissions").select("id,email,company,stage").eq("id", project_id).limit(1).execute()
+    sub = db.table("project_submissions").select("id,email,company,stage,eval_config").eq("id", project_id).limit(1).execute()
     if not sub.data or sub.data[0].get("email") != email:
         raise HTTPException(status_code=403, detail="That project is not on this API key.")
     s = sub.data[0]
@@ -853,6 +915,21 @@ def api_results(project_id: str, authorization: str | None = Header(default=None
     try:
         if db.table("project_items").select("id").eq("project_id", project_id).eq("status", "pending").limit(1).execute().data:
             _kick_sync(project_id)
+    except Exception:
+        pass
+    # Safety net for bulk: a manifest ingest whose background trigger was missed (or whose
+    # worker died) leaves a pending marker that never clears. If it's gone stale, re-fire it
+    # and bump the timestamp so we don't re-fire on every poll. This is what makes a lost
+    # bulk trigger self-heal instead of silently reporting total: 0 forever.
+    try:
+        ec = s.get("eval_config") or {}
+        mp = ec.get("_manifest_pending")
+        if mp and mp.get("key") not in (ec.get("_ingest_keys") or []) and _stale(mp.get("at"), settings.MANIFEST_STALE_MINUTES):
+            mp["at"] = _now_iso()
+            ec["_manifest_pending"] = mp
+            db.table("project_submissions").update({"eval_config": ec}).eq("id", project_id).execute()
+            _kick_ingest_source(project_id, mp.get("manifest_url"), mp.get("sample"), mp.get("key"))
+            logger.info("results: re-fired stalled manifest ingest for %s", project_id)
     except Exception:
         pass
     total, done = _progress(db, project_id)

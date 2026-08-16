@@ -63,6 +63,11 @@ class Settings(BaseSettings):
     # so clinician load and Label Studio stay steady no matter how large the source is.
     DEFAULT_SAMPLE_SIZE: int = 1000
     MAX_SAMPLE_SIZE: int = 10000
+    # Stop streaming a manifest after this many lines so the worker can't run forever on
+    # a pathologically huge file; we sample from what we read. Re-fire a stalled manifest
+    # ingest after this many minutes (safety net for a missed background trigger).
+    MAX_MANIFEST_LINES: int = 5_000_000
+    MANIFEST_STALE_MINUTES: int = 10
 
     # Portal magic-link signing secret — falls back to the Supabase service key
     PORTAL_SECRET: str | None = None
