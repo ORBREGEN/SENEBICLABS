@@ -367,7 +367,15 @@ async def ls_webhook(req: Request, x_ls_secret: str | None = Header(default=None
         logger.error("LS webhook apply failed: %s", exc)
         return {"ok": False}
 
-    # Auto-deliver: when this item completing means the whole batch is done, publish it.
+    # A completed task frees a slot in the rolling window — top it back up from the backlog
+    # so the next batch of pending items flows into Label Studio. This is the "refills as
+    # clinicians finish" half of the backpressure loop.
     if done and project_id:
+        try:
+            from app.api.v1.project import _kick_sync   # lazy: avoid circular import
+            _kick_sync(project_id)
+        except Exception:
+            pass
+        # Auto-deliver: when this item completing means the whole batch is done, publish it.
         _maybe_auto_deliver(db, project_id)
     return {"ok": True}

@@ -164,6 +164,7 @@ class AssignClinicianIn(BaseModel):
 class SourceIn(BaseModel):
     manifest_url: str                # a JSONL manifest in the client's storage (e.g. a pre-signed S3 URL)
     sample: int | None = None        # review a random sample of this many items (default/cap applied)
+    mode: str = "sample"             # "sample" = a bounded random sample (evaluate); "all" = every item (label everything)
 
 
 class IngestIn(BaseModel):
@@ -178,6 +179,7 @@ class IngestSourceIn(BaseModel):
     manifest_url: str
     sample: int | None = None
     key: str | None = None           # the batch's idempotency key — recorded on success so retries skip
+    mode: str = "sample"             # "sample" = reservoir-sample; "all" = ingest every item (exhaustive)
 
 
 class CreateProjectIn(BaseModel):
@@ -622,8 +624,10 @@ def api_ingest(
         db.table("project_submissions").update({"eval_config": ec}).eq("id", body.project_id).execute()
 
     # ── Bulk path: a manifest URL pointing at data in the client's storage (e.g. S3). ──
-    # The data never flows through this API. We stream the manifest in the background,
-    # sample a bounded review set, and ingest lightweight references.
+    # The data never flows through this API. We stream the manifest in the background and
+    # ingest lightweight references — either a bounded random sample (mode "sample", to
+    # evaluate) or every item (mode "all", to label everything). Either way the bytes stay
+    # in the client's bucket, and /sync-pending feeds Label Studio a bounded rolling window.
     if body.source and body.source.manifest_url:
         try:
             import httpx
@@ -633,26 +637,30 @@ def api_ingest(
         except Exception as exc:
             logger.warning("Manifest not reachable for %s: %s", body.project_id, exc)
             raise HTTPException(status_code=400, detail="Could not read manifest_url. Check the URL is correct and readable (e.g. a valid pre-signed S3 URL).")
+        mode = "all" if (body.source.mode or "sample").lower() == "all" else "sample"
         # If the same manifest job is already in flight (recent pending marker), this call
         # is a client retry — don't fire a second worker. The safety net re-fires only if
         # the marker goes stale (the original trigger was missed or its worker died).
         mp = ec.get("_manifest_pending")
         if idempotency_key and mp and mp.get("key") == idempotency_key and not _stale(mp.get("at"), settings.MANIFEST_STALE_MINUTES):
-            n = min(int(body.source.sample or settings.DEFAULT_SAMPLE_SIZE), settings.MAX_SAMPLE_SIZE)
-            return SubmissionResponse(ok=True, message=f"Already ingesting from this manifest — reviewing a sample of up to {n} items.")
+            return SubmissionResponse(ok=True, message="Already ingesting from this manifest.")
         # Record the pending marker (NOT the idempotency key — that goes on only when the
         # worker finishes, so a missed trigger can still be retried). This survives a lost
         # background trigger: GET /results re-fires the worker while this marker is unfinished.
         ec["_manifest_pending"] = {
             "manifest_url": body.source.manifest_url,
             "sample": body.source.sample,
+            "mode": mode,
             "key": idempotency_key,
             "at": _now_iso(),
         }
         db.table("project_submissions").update({"eval_config": ec}).eq("id", body.project_id).execute()
-        _kick_ingest_source(body.project_id, body.source.manifest_url, body.source.sample, idempotency_key)
+        _kick_ingest_source(body.project_id, body.source.manifest_url, body.source.sample, idempotency_key, mode)
+        if mode == "all":
+            logger.info("API ingest (manifest, exhaustive) for %s", body.project_id)
+            return SubmissionResponse(ok=True, message="Ingesting every item from the manifest — this runs in the background and streams into review.")
         n = min(int(body.source.sample or settings.DEFAULT_SAMPLE_SIZE), settings.MAX_SAMPLE_SIZE)
-        logger.info("API ingest (manifest) for %s: sampling up to %d", body.project_id, n)
+        logger.info("API ingest (manifest, sample) for %s: up to %d", body.project_id, n)
         return SubmissionResponse(ok=True, message=f"Ingesting from manifest — reviewing a sample of up to {n} items.")
 
     # ── Inline path: items in the request body (small batches). ──
@@ -710,14 +718,14 @@ def _kick_sync(project_id: str) -> None:
         pass   # the read-timeout is expected; the sync request is now running independently
 
 
-def _kick_ingest_source(project_id: str, manifest_url: str, sample: int | None, key: str | None = None) -> None:
-    """Fire-and-forget trigger for the background manifest ingest (stream + sample)."""
+def _kick_ingest_source(project_id: str, manifest_url: str, sample: int | None, key: str | None = None, mode: str = "sample") -> None:
+    """Fire-and-forget trigger for the background manifest ingest (stream + sample/ingest-all)."""
     if not settings.ADMIN_API_KEY:
         return
     url = f"{settings.SELF_URL.rstrip('/')}/api/v1/project/ingest-source"
     try:
         import httpx
-        httpx.post(url, json={"project_id": project_id, "manifest_url": manifest_url, "sample": sample, "key": key},
+        httpx.post(url, json={"project_id": project_id, "manifest_url": manifest_url, "sample": sample, "key": key, "mode": mode},
                    headers={"X-Admin-Key": settings.ADMIN_API_KEY},
                    timeout=httpx.Timeout(8.0, read=0.5))
     except Exception:
@@ -774,11 +782,24 @@ def sync_pending(project_id: str, x_admin_key: str | None = Header(default=None)
         logger.error("sync-pending setup failed for %s: %s", project_id, exc)
         raise HTTPException(status_code=502, detail="Sync setup failed; will retry.")
 
-    # Atomically CLAIM a chunk: read pending, then transition only rows STILL 'pending'
-    # to 'queued'. Concurrent sync runs each claim a disjoint set (the status='pending'
+    # Rolling window (backpressure): keep at most LS_ACTIVE_WINDOW tasks ACTIVE in Label
+    # Studio at once (status 'queued' or 'in_progress'). The full backlog lives in our DB;
+    # we only top LS up to the free capacity. When clinicians finish a task the webhook marks
+    # it 'done', a slot frees, and a refill kick tops the window back up — so LS load stays
+    # flat no matter how big the job is. This is what makes exhaustive bulk non-stressful.
+    active = (db.table("project_items").select("id", count="exact")
+              .eq("project_id", project_id).in_("status", ["queued", "in_progress"]).limit(1).execute()).count or 0
+    capacity = settings.LS_ACTIVE_WINDOW - active
+    if capacity <= 0:
+        logger.info("sync-pending: window full for %s (active=%d) — waiting for reviews to complete", project_id, active)
+        return SubmissionResponse(ok=True, message=f"Label Studio window full ({active} active); refills as reviews complete.")
+    take = min(CHUNK, capacity)
+
+    # Atomically CLAIM up to `take` pending items: read them, then transition only rows STILL
+    # 'pending' to 'queued'. Concurrent sync runs each claim a disjoint set (the status='pending'
     # filter makes the row transition the lock), so items are never double-pushed to LS.
     cand = (db.table("project_items").select("id,content")
-            .eq("project_id", project_id).eq("status", "pending").order("idx").limit(CHUNK).execute()).data or []
+            .eq("project_id", project_id).eq("status", "pending").order("idx").limit(take).execute()).data or []
     if not cand:
         return SubmissionResponse(ok=True, message="Nothing pending to sync.")
     claimed_ids = []
@@ -801,11 +822,14 @@ def sync_pending(project_id: str, x_admin_key: str | None = Header(default=None)
         logger.error("sync-pending push failed for %s: %s", project_id, exc)
         raise HTTPException(status_code=502, detail="Sync push failed; items returned to pending for retry.")
 
-    # More still pending? Chain the next chunk (a fresh request keeps full CPU on Cloud Run).
+    # Chain the next chunk only while the window still has room AND work is pending. Once the
+    # window is full we stop; completions (via the webhook refill kick) resume the draining.
+    remaining_capacity = capacity - len(items)
     more = db.table("project_items").select("id").eq("project_id", project_id).eq("status", "pending").limit(1).execute()
-    if more.data:
+    if more.data and remaining_capacity > 0:
         _kick_sync(project_id)
-    logger.info("sync-pending: pushed %d items for %s (more=%s)", len(items), project_id, bool(more.data))
+    logger.info("sync-pending: pushed %d for %s (active_before=%d, window=%d, more_pending=%s)",
+                len(items), project_id, active, settings.LS_ACTIVE_WINDOW, bool(more.data))
     return SubmissionResponse(ok=True, message=f"Synced {len(items)} items.")
 
 
@@ -835,16 +859,40 @@ def ingest_source(body: IngestSourceIn, x_admin_key: str | None = Header(default
         required = []
 
     import httpx as _httpx, json as _json, random
+    exhaustive = (body.mode or "sample").lower() == "all"
     target = min(int(body.sample or settings.DEFAULT_SAMPLE_SIZE), settings.MAX_SAMPLE_SIZE)
+
+    # Exhaustive mode ingests EVERY valid item, buffered and chunk-inserted as we stream, so
+    # memory stays flat no matter how large the manifest is. We keep a running idx from the
+    # current max. Sample mode reservoir-samples a bounded set in a single pass.
+    next_idx = 0
+    if exhaustive:
+        existing = (db.table("project_items").select("idx").eq("project_id", body.project_id)
+                    .order("idx", desc=True).limit(1).execute())
+        next_idx = (existing.data[0]["idx"] + 1) if existing.data else 0
+
     reservoir: list[dict] = []
-    n_seen = skipped = lines_read = 0
+    buf: list[dict] = []
+    n_seen = skipped = lines_read = inserted = 0
     capped = False
+
+    def _flush_buffer():
+        nonlocal next_idx, inserted
+        if not buf:
+            return
+        rows = [{"project_id": body.project_id, "idx": next_idx + i, "content": c} for i, c in enumerate(buf)]
+        for i in range(0, len(rows), 500):
+            db.table("project_items").insert(rows[i:i + 500]).execute()
+        next_idx += len(buf)
+        inserted += len(buf)
+        buf.clear()
+
     try:
         with _httpx.stream("GET", body.manifest_url, timeout=_httpx.Timeout(30.0, read=None)) as r:
             r.raise_for_status()
             for line in r.iter_lines():
                 # Hard cap on lines read so a pathologically huge manifest can't run the
-                # worker forever — we sample from what we've read and stop.
+                # worker forever — we ingest/sample what we've read and stop.
                 lines_read += 1
                 if lines_read > settings.MAX_MANIFEST_LINES:
                     capped = True
@@ -861,18 +909,37 @@ def ingest_source(body: IngestSourceIn, x_admin_key: str | None = Header(default
                     skipped += 1
                     continue
                 n_seen += 1
-                # Reservoir sampling: a uniform random sample of `target` items in a
-                # single streaming pass, without loading the whole manifest into memory.
-                if len(reservoir) < target:
-                    reservoir.append(obj)
+                if exhaustive:
+                    buf.append(obj)
+                    if len(buf) >= 500:
+                        _flush_buffer()
                 else:
-                    j = random.randint(0, n_seen - 1)
-                    if j < target:
-                        reservoir[j] = obj
+                    # Reservoir sampling: a uniform random sample of `target` items in a
+                    # single streaming pass, without loading the whole manifest into memory.
+                    if len(reservoir) < target:
+                        reservoir.append(obj)
+                    else:
+                        j = random.randint(0, n_seen - 1)
+                        if j < target:
+                            reservoir[j] = obj
+            if exhaustive:
+                _flush_buffer()
     except Exception as exc:
         logger.error("ingest-source read failed for %s: %s", body.project_id, exc)
         raise HTTPException(status_code=502, detail="Could not read the manifest.")
 
+    # ── Exhaustive: every item is already inserted as pending; hand off to the rolling window. ──
+    if exhaustive:
+        _finalize_manifest_job(db, body.project_id, body.key)   # clean read = done, even if 0 usable
+        if inserted == 0:
+            logger.warning("ingest-source (all): no usable items for %s (skipped %d)", body.project_id, skipped)
+            return SubmissionResponse(ok=True, message=f"Manifest had no usable items (skipped {skipped}).")
+        _kick_sync(body.project_id)   # /sync-pending tops Label Studio up to the rolling window
+        seen_note = f"{inserted}+ (line cap reached)" if capped else str(inserted)
+        logger.info("ingest-source (all): ingested %s items for %s (skipped %d, capped=%s)", seen_note, body.project_id, skipped, capped)
+        return SubmissionResponse(ok=True, message=f"Ingested all {seen_note} items from the manifest into review.")
+
+    # ── Sample: insert the reservoir, then hand off. ──
     if not reservoir:
         # A clean read that yielded nothing usable is still a completed job — finalize so
         # it isn't retried forever.
@@ -928,7 +995,7 @@ def api_results(project_id: str, authorization: str | None = Header(default=None
             mp["at"] = _now_iso()
             ec["_manifest_pending"] = mp
             db.table("project_submissions").update({"eval_config": ec}).eq("id", project_id).execute()
-            _kick_ingest_source(project_id, mp.get("manifest_url"), mp.get("sample"), mp.get("key"))
+            _kick_ingest_source(project_id, mp.get("manifest_url"), mp.get("sample"), mp.get("key"), mp.get("mode") or "sample")
             logger.info("results: re-fired stalled manifest ingest for %s", project_id)
     except Exception:
         pass

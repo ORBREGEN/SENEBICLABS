@@ -68,6 +68,11 @@ class Settings(BaseSettings):
     # ingest after this many minutes (safety net for a missed background trigger).
     MAX_MANIFEST_LINES: int = 5_000_000
     MANIFEST_STALE_MINUTES: int = 10
+    # Rolling window (backpressure): the most tasks we keep ACTIVE in Label Studio at once
+    # (queued or in review). The full backlog lives in our DB; /sync-pending tops LS up to
+    # this many and refills as clinicians finish, so LS load stays flat no matter how large
+    # the job is. Exhaustive ("all") ingestion relies on this to not overwhelm Label Studio.
+    LS_ACTIVE_WINDOW: int = 5000
 
     # Portal magic-link signing secret — falls back to the Supabase service key
     PORTAL_SECRET: str | None = None
