@@ -200,7 +200,10 @@ class IngestSourceIn(BaseModel):
 
 class CreateProjectIn(BaseModel):
     name: str
-    eval_config: dict                # the task schema the client defines (validated before save)
+    # Pick an outcome template (and optionally your `classes`) OR hand-author `eval_config`.
+    template: str | None = None      # e.g. "model_evaluation" | "data_labeling" | "rlhf_preference" | "gold_answers"
+    classes: list[str] | None = None # your label set, when a template needs one
+    eval_config: dict | None = None  # full custom config (advanced) — the task schema you define
     webhook_url: str | None = None
 
 
@@ -566,7 +569,16 @@ def portal_revoke_key(body: KeyRevokeIn):
 # Same capabilities as the portal, for clients who integrate by code instead of the
 # dashboard: push items, poll status/results, and (optionally) get a webhook on delivery.
 
-@router.post("/projects", summary="API: create a project with your own task config (Bearer API key)")
+@router.get("/templates", summary="API: list outcome templates you can create a project from")
+def api_templates():
+    """The 'pick what you want to achieve' catalog. Create a project from one with
+    POST /projects {"name": "...", "template": "<name>", "classes": [...]} — no config
+    authoring needed for the common case."""
+    from app.services import templates as tmpl
+    return {"ok": True, "templates": tmpl.list_templates()}
+
+
+@router.post("/projects", summary="API: create a project from a template or your own task config (Bearer API key)")
 def api_create_project(body: CreateProjectIn, authorization: str | None = Header(default=None)):
     """Self-serve task creation: the client defines the task schema (eval_config) and
     creates the project by API, instead of an operator setting it up in the dashboard.
@@ -577,13 +589,25 @@ def api_create_project(body: CreateProjectIn, authorization: str | None = Header
     db = get_client()
     if db is None:
         raise HTTPException(status_code=503, detail="Database unavailable.")
+    # Start from an outcome template (the "pick what you want" path) or a hand-authored
+    # config. A template sets the right purpose + fields; the client only supplies `classes`.
+    if body.template:
+        from app.services import templates as tmpl
+        eval_config = tmpl.config_from_template(body.template, classes=body.classes)
+        if eval_config is None:
+            names = ", ".join(t["name"] for t in tmpl.list_templates())
+            raise HTTPException(status_code=422, detail=f"Unknown template '{body.template}'. Available: {names}.")
+    elif body.eval_config:
+        eval_config = body.eval_config
+    else:
+        raise HTTPException(status_code=422, detail="Provide a `template` (with optional `classes`) or a custom `eval_config`.")
     # Validate the schema renders before we save it — a broken config fails here.
     try:
         from app.services import labelstudio as ls
-        ls.build_label_config(body.eval_config)
+        ls.build_label_config(eval_config)
     except Exception as exc:
         raise HTTPException(status_code=422, detail=f"Invalid eval_config: {exc}")
-    ec = dict(body.eval_config)
+    ec = dict(eval_config)
     # Purpose is the keystone: it decides the reviewer workflow and the deliverable shape.
     # 'evaluate' judges a model's output (accuracy scorecard); 'label' categorises data;
     # 'create' produces new data (gold answers / preferences). Defaults to 'evaluate'.
