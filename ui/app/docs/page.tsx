@@ -10,7 +10,7 @@ export const metadata: Metadata = {
   alternates: { canonical: 'https://senebiclabs.com/docs' },
 }
 
-const BASE = 'https://senebiclabs-api-777437555578.us-central1.run.app/api/v1/project'
+const BASE = 'https://api.senebiclabs.com/api/v1/project'
 
 function Code({ children }: { children: string }) {
   return (
@@ -139,6 +139,9 @@ KEY="your_api_key"`}</Code>
             <li><C>data_labeling</C> — your data back, labelled → labelled dataset + summary</li>
             <li><C>rlhf_preference</C> — pick the better of two responses → preference pairs for RLHF</li>
             <li><C>gold_answers</C> — write the ideal answer → gold dataset for fine-tuning</li>
+            <li><C>case_review</C> — judge whether AI helped or hurt on full cases → audit dataset + impact distribution</li>
+            <li><C>benchmark_creation</C> — author challenging test cases → an evaluation benchmark</li>
+            <li><C>adversarial_prompts</C> — write probes that expose model gaps → a red-teaming test set</li>
           </ul>
           <p>Create from one, supplying your own <C>classes</C> (label set) where it applies:</p>
           <Code>{`curl -X POST "$BASE/projects" \\
