@@ -36,6 +36,22 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+_PURPOSES = ("evaluate", "label", "create")
+
+
+def _normalize_purpose(ec: dict) -> str:
+    """The project's declared purpose, normalised. Unknown/absent -> 'evaluate' (the default,
+    so existing projects keep working)."""
+    p = str((ec or {}).get("purpose") or "evaluate").strip().lower()
+    return p if p in _PURPOSES else "evaluate"
+
+
+def _default_reviewers(purpose: str) -> int:
+    """Reviewer default by purpose: judgments (evaluate/label) get N-way consensus; free-text
+    creation is authored by a single expert (add a review layer via POST /admin/reviewers)."""
+    return 1 if purpose == "create" else int(settings.DEFAULT_REVIEWERS_PER_ITEM)
+
+
 def _stale(iso: str | None, minutes: int) -> bool:
     """True if an ISO timestamp is older than `minutes` ago (or missing/unparseable).
     Used to decide whether a background manifest ingest looks stuck and should be re-fired."""
@@ -568,10 +584,15 @@ def api_create_project(body: CreateProjectIn, authorization: str | None = Header
     except Exception as exc:
         raise HTTPException(status_code=422, detail=f"Invalid eval_config: {exc}")
     ec = dict(body.eval_config)
+    # Purpose is the keystone: it decides the reviewer workflow and the deliverable shape.
+    # 'evaluate' judges a model's output (accuracy scorecard); 'label' categorises data;
+    # 'create' produces new data (gold answers / preferences). Defaults to 'evaluate'.
+    ec["purpose"] = _normalize_purpose(ec)
     # How many clinicians review each item is our quality call, not the client's — it is
-    # the main cost/quality lever. Override whatever they sent with our default; the
-    # operator tunes it per project via POST /admin/reviewers.
-    ec["reviewers_per_item"] = int(settings.DEFAULT_REVIEWERS_PER_ITEM)
+    # the main cost/quality lever. Judgments (evaluate/label) get N-way consensus; free-text
+    # creation is authored by one expert (a review layer can be added). Operator tunes it
+    # per project via POST /admin/reviewers.
+    ec["reviewers_per_item"] = _default_reviewers(ec["purpose"])
     if body.webhook_url:
         ec["_webhook_url"] = body.webhook_url
         ec.setdefault("_webhook_secret", secrets.token_hex(32))
@@ -1001,7 +1022,9 @@ def api_results(project_id: str, authorization: str | None = Header(default=None
         pass
     total, done = _progress(db, project_id)
     stage = s.get("stage") or "submitted"
-    out: dict = {"ok": True, "project_id": project_id, "status": stage, "total": total, "done": done}
+    purpose = _normalize_purpose(s.get("eval_config") or {})
+    out: dict = {"ok": True, "project_id": project_id, "purpose": purpose,
+                 "status": stage, "total": total, "done": done}
     # Poll-friendly: only 'delivered' carries the report + reviewed items; earlier
     # stages just report status + counts so the client can loop without errors.
     if stage == "delivered":

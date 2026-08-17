@@ -25,7 +25,12 @@ Honesty rails baked in:
 """
 import csv
 import io
+from collections import Counter
 from datetime import datetime, timezone
+
+# A project's purpose decides its deliverable: 'evaluate' -> a model-performance scorecard;
+# 'label'/'create' -> a summary of the produced dataset (there is no prediction to score).
+PURPOSES = ("evaluate", "label", "create")
 
 CORRECT, INCORRECT, PARTIAL = "correct", "incorrect", "partial"
 THIN_SUPPORT = 10  # below this many ground-truth cases, per-class metrics are noisy
@@ -262,26 +267,120 @@ def compute_report(items: list[dict], classes=None, case_id_field: str | None = 
     }
 
 
+def _agreement_qa(items: list[dict], case_id_field: str | None) -> dict | None:
+    """Inter-reviewer agreement, present only when items were multi-reviewed. Shared by the
+    evaluation and dataset deliverables so both report agreement the same way."""
+    agrees, reviewer_counts, disagreement_cases = [], [], []
+    for it in items:
+        lbl = it.get("label") or {}
+        if lbl.get("_agreement") is None:
+            continue
+        agrees.append(lbl["_agreement"])
+        reviewer_counts.append(lbl.get("_reviewers") or 0)
+        if lbl.get("_disagreed"):
+            disagreement_cases.append({
+                "idx": it.get("idx"),
+                "case_id": _case_id(it.get("content") or {}, case_id_field),
+                "agreement": lbl["_agreement"],
+                "reviewers": lbl.get("_reviewers"),
+            })
+    if not agrees:
+        return None
+    return {
+        "reviewers": max(reviewer_counts) if reviewer_counts else None,
+        "mean_agreement": round(sum(agrees) / len(agrees), 3),
+        "reviewed_items": len(agrees),
+        "disagreements": len(disagreement_cases),
+        "disagreement_cases": disagreement_cases,
+    }
+
+
+def compute_dataset_report(items: list[dict], fields: dict, purpose: str,
+                           case_id_field: str | None = None) -> dict:
+    """Deliverable for label/create projects: a summary of the PRODUCED dataset, not an
+    accuracy scorecard. Reports completion/coverage, a per-field distribution or coverage,
+    and inter-reviewer agreement. The produced values themselves live on each item's label
+    (returned with the results); this summarises them rather than scoring a ground truth."""
+    fields = fields or {}
+    status_counts = Counter((it.get("status") or "pending") for it in items)
+    done_items = [it for it in items if it.get("status") == "done"]
+
+    field_summaries = {}
+    for fname, fdef in fields.items():
+        ftype = (fdef or {}).get("type")
+        vals = [(it.get("label") or {}).get(fname) for it in done_items]
+        vals = [v for v in vals if v not in (None, "")]
+        if ftype in ("single", "from_classes", "scale", "flag"):
+            field_summaries[fname] = {"type": ftype, "answered": len(vals),
+                                      "distribution": dict(Counter(str(v) for v in vals))}
+        elif ftype == "structured":
+            present = sum(1 for v in vals if isinstance(v, dict) and v.get("present"))
+            findings = Counter(v.get("finding") for v in vals
+                               if isinstance(v, dict) and v.get("present") and v.get("finding"))
+            field_summaries[fname] = {"type": "structured", "present": present, "findings": dict(findings)}
+        elif ftype == "text":
+            lengths = [len(str(v)) for v in vals]
+            field_summaries[fname] = {"type": "text", "answered": len(vals),
+                                      "avg_length": round(sum(lengths) / len(lengths)) if lengths else 0}
+        else:
+            field_summaries[fname] = {"type": ftype, "answered": len(vals)}
+
+    total, completed = len(items), len(done_items)
+    qa = _agreement_qa(items, case_id_field)
+    noun = "labelled" if purpose == "label" else "produced"
+    caveats = [
+        f"This is a '{purpose}' project: the deliverable is the {noun} dataset itself (each "
+        "item's values are returned with the results), summarised here — not an accuracy "
+        "score, since there is no model prediction to score against.",
+    ]
+    if qa is None and completed:
+        caveats.append("Items were single-reviewed, so no inter-reviewer agreement is reported.")
+
+    return {
+        "kind": "dataset",
+        "purpose": purpose,
+        "totals": {
+            "items": total,
+            "completed": completed,
+            "in_progress": status_counts.get("in_progress", 0),
+            "pending": status_counts.get("pending", 0) + status_counts.get("queued", 0),
+            "coverage": round(completed / total, 3) if total else None,
+        },
+        "fields": field_summaries,
+        "qa": qa,
+        "caveats": caveats,
+    }
+
+
 def build_report(db, project_id: str) -> dict:
-    """Fetch a project's items + eval_config (classes + case-id field) and compute the report."""
-    classes = None
-    case_id_field = None
+    """Fetch a project's items + eval_config and compute the deliverable for its PURPOSE:
+    'evaluate' -> a model-performance scorecard; 'label'/'create' -> a produced-dataset
+    summary. Purpose defaults to 'evaluate' when unset (existing projects are evaluations)."""
+    ec = {}
     try:
         sub = db.table("project_submissions").select("eval_config").eq("id", project_id).limit(1).execute()
-        if sub.data and sub.data[0].get("eval_config"):
-            ec = sub.data[0]["eval_config"] or {}
-            schema = ec.get("schema") or {}
-            classes = schema.get("classes") or None
-            # The column carrying the client's own case/study id, so verdicts bind to THEIR id.
-            case_id_field = ec.get("case_id_field") or schema.get("case_id_field")
+        ec = (sub.data[0].get("eval_config") if sub.data else None) or {}
     except Exception:
-        classes = None
-        case_id_field = None
+        ec = {}
+    schema = ec.get("schema") or {}
+    purpose = str(ec.get("purpose") or "evaluate").strip().lower()
+    if purpose not in PURPOSES:
+        purpose = "evaluate"
+    # The column carrying the client's own case/study id, so outputs bind to THEIR id.
+    case_id_field = ec.get("case_id_field") or schema.get("case_id_field")
     rows = (
         db.table("project_items").select("idx,content,label,status")
         .eq("project_id", project_id).order("idx").execute()
     )
-    report = compute_report(rows.data or [], classes, case_id_field=case_id_field)
+    items = rows.data or []
+
+    if purpose == "evaluate":
+        report = compute_report(items, schema.get("classes") or None, case_id_field=case_id_field)
+        report["kind"] = "evaluation"
+        report["purpose"] = "evaluate"
+    else:
+        report = compute_dataset_report(items, schema.get("fields") or {}, purpose, case_id_field=case_id_field)
+
     report["project_id"] = project_id
     report["generated_at"] = datetime.now(timezone.utc).isoformat()
     return report
@@ -293,7 +392,40 @@ def _pct(x):
     return "n/a" if x is None else f"{x * 100:.1f}%"
 
 
+def render_dataset_markdown(rep: dict) -> str:
+    t = rep["totals"]
+    out = [f"# {rep.get('purpose', 'dataset').capitalize()} dataset summary"]
+    if rep.get("project_id"):
+        out.append(f"Project `{rep['project_id']}` · generated {rep.get('generated_at', '')}")
+    out += ["", f"- Items: **{t['items']}**  ·  completed: **{t['completed']}**  ·  "
+            f"in progress: **{t['in_progress']}**  ·  pending: **{t['pending']}**",
+            f"- Coverage: **{_pct(t['coverage'])}**", ""]
+    out.append("## Per-field summary")
+    for fname, fs in (rep.get("fields") or {}).items():
+        if "distribution" in fs:
+            dist = ", ".join(f"{k}: {v}" for k, v in fs["distribution"].items()) or "—"
+            out.append(f"- **{fname}** ({fs['type']}, answered {fs['answered']}): {dist}")
+        elif fs.get("type") == "text":
+            out.append(f"- **{fname}** (text): {fs['answered']} answered, avg {fs['avg_length']} chars")
+        elif fs.get("type") == "structured":
+            out.append(f"- **{fname}** (structured): present in {fs['present']} case(s)")
+        else:
+            out.append(f"- **{fname}** ({fs.get('type')}): answered {fs.get('answered')}")
+    out.append("")
+    qa = rep.get("qa")
+    if qa:
+        out += [f"## Inter-reviewer agreement",
+                f"- Reviewers: {qa['reviewers']}  ·  mean agreement: {_pct(qa['mean_agreement'])}  ·  "
+                f"disagreements: {qa['disagreements']} of {qa['reviewed_items']}", ""]
+    out.append("## Notes")
+    for c in rep.get("caveats", []):
+        out.append(f"- {c}")
+    return "\n".join(out)
+
+
 def render_markdown(rep: dict) -> str:
+    if rep.get("kind") == "dataset":
+        return render_dataset_markdown(rep)
     t = rep["totals"]
     ex = t["excluded"]
     acc = rep["accuracy"]
