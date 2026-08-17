@@ -127,9 +127,33 @@ KEY="your_api_key"`}</Code>
             <span className="tag">Create a project</span>
           </h2>
           <p>
-            Define your own task and get back a <C>project_id</C> to push items to. Skip this
-            if we set the project up for you.
+            Get back a <C>project_id</C> to push items to. Skip this if we set the project up for you.
           </p>
+
+          <h3>Start from a template (recommended)</h3>
+          <p>
+            Pick what you want to achieve and we build the project for you — no config to author.
+            List the outcomes with <C>GET /templates</C>:
+          </p>
+          <ul>
+            <li><C>model_evaluation</C> — grade your model&rsquo;s outputs → accuracy + safety scorecard</li>
+            <li><C>data_labeling</C> — your data back, labelled → labelled dataset + summary</li>
+            <li><C>rlhf_preference</C> — pick the better of two responses → preference pairs for RLHF</li>
+            <li><C>gold_answers</C> — write the ideal answer → gold dataset for fine-tuning</li>
+          </ul>
+          <p>Create from one, supplying your own <C>classes</C> (label set) where it applies:</p>
+          <Code>{`curl -X POST "$BASE/projects" \\
+  -H "Authorization: Bearer $API_KEY" -H "Content-Type: application/json" \\
+  -d '{
+    "name": "Triage model eval",
+    "template": "model_evaluation",
+    "classes": ["Routine", "Urgent", "Emergency"],
+    "webhook_url": "https://your-app.com/hooks/senebiclabs"
+  }'`}</Code>
+          <p>That is all most projects need. The rest of this section is the <b>advanced</b> path — authoring a full config yourself.</p>
+
+          <h3>Custom config (advanced)</h3>
+          <p>Define your own task from scratch:</p>
           <Code>{`curl -X POST "$BASE/projects" \\
   -H "Authorization: Bearer $API_KEY" \\
   -H "Content-Type: application/json" \\

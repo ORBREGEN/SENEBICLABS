@@ -43,8 +43,39 @@ and drive many projects.
 
 ## 1. Create a project (self-serve) — `POST /projects`
 
-Define your own task and get back a `project_id` to push items to. Skip this if we
-set the project up for you.
+Get back a `project_id` to push items to. Skip this if we set the project up for you.
+
+### Start from a template (recommended)
+
+Pick what you want to achieve and we build the project for you — no config to author.
+List the outcomes with `GET /templates`:
+
+| template | you get |
+|---|---|
+| `model_evaluation` | grade your model's outputs → accuracy + safety scorecard |
+| `data_labeling` | your data back, labelled → labelled dataset + summary |
+| `rlhf_preference` | pick the better of two responses → preference pairs for RLHF |
+| `gold_answers` | write the ideal answer → gold dataset for fine-tuning |
+
+Create from one, supplying your own `classes` (label set) where it applies:
+
+```bash
+curl -X POST "$BASE/projects" \
+  -H "Authorization: Bearer $API_KEY" -H "Content-Type: application/json" \
+  -d '{
+    "name": "Triage model eval",
+    "template": "model_evaluation",
+    "classes": ["Routine", "Urgent", "Emergency"],
+    "webhook_url": "https://your-app.com/hooks/senebiclabs"
+  }'
+```
+
+That is all most projects need. The rest of this section is the **advanced** path —
+authoring a full config yourself.
+
+### Custom config (advanced)
+
+Define your own task from scratch:
 
 ```bash
 curl -X POST "$BASE/projects" \
