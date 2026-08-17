@@ -69,6 +69,11 @@ curl -X POST "$BASE/projects" \
   }'
 ```
 
+**Tune a template to your own rubric.** `GET /templates` also returns each template's full
+`eval_config`. Take the closest one, edit it to fit your exact task (add rating axes, change
+fields or context), and submit it as a custom `eval_config` (below) instead of `template`.
+That way you start from a working, validated config rather than a blank page.
+
 That is all most projects need. The rest of this section is the **advanced** path —
 authoring a full config yourself.
 

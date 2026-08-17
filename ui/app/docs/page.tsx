@@ -150,6 +150,12 @@ KEY="your_api_key"`}</Code>
     "webhook_url": "https://your-app.com/hooks/senebiclabs"
   }'`}</Code>
           <p>That is all most projects need. The rest of this section is the <b>advanced</b> path — authoring a full config yourself.</p>
+          <p>
+            <b>Tune a template to your own rubric.</b> <C>GET /templates</C> also returns each template&rsquo;s
+            full <C>eval_config</C>. Take the closest one, edit it to fit your exact task (add rating axes,
+            change fields or context), and submit it as a custom <C>eval_config</C> below instead of{' '}
+            <C>template</C> — so you start from a working, validated config, not a blank page.
+          </p>
 
           <h3>Custom config (advanced)</h3>
           <p>Define your own task from scratch:</p>

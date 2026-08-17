@@ -105,10 +105,14 @@ TEMPLATES: dict[str, dict] = {
 
 
 def list_templates() -> list[dict]:
-    """The catalog a client picks from — name, what it's for, and its purpose."""
+    """The catalog a client picks from — name, what it's for, its purpose, and the full
+    `eval_config` it expands to. A serious client can take that config, tune it to their own
+    rubric, and submit it as a custom `eval_config` — so 'template -> customise' is a smooth
+    two-step, not a cliff between one-click and a blank page."""
     return [
         {"name": name, "title": t["title"], "description": t["description"],
-         "needs": t["needs"], "purpose": t["eval_config"]["purpose"]}
+         "needs": t["needs"], "purpose": t["eval_config"]["purpose"],
+         "eval_config": copy.deepcopy(t["eval_config"])}
         for name, t in TEMPLATES.items()
     ]
 
