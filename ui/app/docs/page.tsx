@@ -112,9 +112,8 @@ KEY="your_api_key"`}</Code>
             can revoke any of them there at any time.
           </p>
           <p>
-            Then, two ways to start a project: we set it up and give you a <C>project_id</C> (managed), or you
-            create it yourself with <C>POST /projects</C> (self-serve, below). One key can create and drive
-            many projects.
+            Then create a project with <C>POST /projects</C> (below) and you get a <C>project_id</C> to push
+            items to. One key can create and drive many projects.
           </p>
         </section>
 
@@ -127,7 +126,7 @@ KEY="your_api_key"`}</Code>
             <span className="tag">Create a project</span>
           </h2>
           <p>
-            Get back a <C>project_id</C> to push items to. Skip this if we set the project up for you.
+            Create a project and get back a <C>project_id</C> to push items to.
           </p>
 
           <h3>Start from a template (recommended)</h3>

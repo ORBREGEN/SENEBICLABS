@@ -35,15 +35,14 @@ Authorization: Bearer <YOUR_API_KEY>
 one in seconds. Keys are shown once, tied to your account, and revocable there at any
 time. Keep it secret.
 
-Then, two ways to start a project: we set it up and give you a `project_id` (managed),
-or you create it yourself with `POST /projects` (self-serve, §1). One key can create
-and drive many projects.
+Then create a project with `POST /projects` (§1) and you get a `project_id` to push
+items to. One key can create and drive many projects.
 
 ---
 
-## 1. Create a project (self-serve) — `POST /projects`
+## 1. Create a project — `POST /projects`
 
-Get back a `project_id` to push items to. Skip this if we set the project up for you.
+Create a project and get back a `project_id` to push items to.
 
 ### Start from a template (recommended)
 
