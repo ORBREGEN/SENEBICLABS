@@ -1022,9 +1022,13 @@ def api_results(project_id: str, authorization: str | None = Header(default=None
         pass
     total, done = _progress(db, project_id)
     stage = s.get("stage") or "submitted"
+    # Client-facing status only. The internal delivery funnel (scoping/agreement/pilot/…) is
+    # never disclosed — the client sees just what matters to them: received, in review, or
+    # delivered, alongside the total/done counts for progress.
+    client_status = "delivered" if stage == "delivered" else ("received" if stage == "submitted" else "in_review")
     purpose = _normalize_purpose(s.get("eval_config") or {})
     out: dict = {"ok": True, "project_id": project_id, "purpose": purpose,
-                 "status": stage, "total": total, "done": done}
+                 "status": client_status, "total": total, "done": done}
     # Poll-friendly: only 'delivered' carries the report + reviewed items; earlier
     # stages just report status + counts so the client can loop without errors.
     if stage == "delivered":

@@ -196,8 +196,8 @@ expire mid-review), send a new manifest per cycle, and we return a rolling score
 ## 3. Poll status + results — `GET /results`
 
 Clinician review is done by people, so results are not instant. Poll this endpoint;
-`status` moves through `submitted → scoping → agreement → pilot → production → delivered`.
-Only `delivered` includes `report` and `items`.
+`status` moves through `received → in_review → delivered`, and `total` / `done` show
+progress along the way. Only `delivered` includes `report` and `items`.
 
 ```bash
 curl "$BASE/results?project_id=YOUR_PROJECT_ID" \
@@ -207,7 +207,7 @@ curl "$BASE/results?project_id=YOUR_PROJECT_ID" \
 While in review:
 
 ```json
-{ "ok": true, "project_id": "...", "status": "production", "total": 200, "done": 142 }
+{ "ok": true, "project_id": "...", "status": "in_review", "total": 200, "done": 142 }
 ```
 
 When delivered:
@@ -291,8 +291,8 @@ async def hook(request: Request):
     ...
 ```
 
-Return `2xx` to acknowledge. Single fire-and-forget call for now (no retries), so keep
-polling `GET /results` as the source of truth if delivery is critical.
+Return `2xx` to acknowledge. One call is made per delivery (no automatic retries), so
+keep polling `GET /results` as the source of truth if delivery is critical.
 
 ---
 

@@ -253,13 +253,13 @@ KEY="your_api_key"`}</Code>
           <p>
             Clinician review is done by people, so results are not instant. Poll this endpoint.
             <C>status</C> moves through{' '}
-            <C>submitted, scoping, agreement, pilot, production, delivered</C>. Only{' '}
+            <C>received, in_review, delivered</C>, and <C>total</C> / <C>done</C> show progress. Only{' '}
             <C>delivered</C> includes the report and items.
           </p>
           <Code>{`curl "$BASE/results?project_id=YOUR_PROJECT_ID" \\
   -H "Authorization: Bearer $API_KEY"`}</Code>
           <h3>While in review</h3>
-          <Code>{`{ "ok": true, "project_id": "...", "status": "production", "total": 200, "done": 142 }`}</Code>
+          <Code>{`{ "ok": true, "project_id": "...", "status": "in_review", "total": 200, "done": 142 }`}</Code>
           <h3>When delivered</h3>
           <Code>{`{
   "ok": true,
@@ -271,7 +271,7 @@ KEY="your_api_key"`}</Code>
     "accuracy": { "value": 0.8, "correct": 160, "assessable": 200 },
     "critical_misses": [ ... ],
     "per_class": { ... },
-    "qa": { "mean_agreement": 0.86, "reviewers": 5, "disagreements": 12 }
+    "qa": { "mean_agreement": 0.86, "reviewers": 3, "disagreements": 12 }
   },
   "items": [
     { "idx": 0, "content": { "case_id": "case_001", ... },
@@ -347,7 +347,7 @@ async def hook(request: Request):
     payload = json.loads(raw)   # trusted from here
     ...`}</Code>
           <p>
-            Return <C>2xx</C> to acknowledge. It is a single fire-and-forget call for now (no
+            Return <C>2xx</C> to acknowledge. One call is made per delivery (no automatic
             retries), so keep polling <C>GET /results</C> as the source of truth if delivery is
             critical.
           </p>
