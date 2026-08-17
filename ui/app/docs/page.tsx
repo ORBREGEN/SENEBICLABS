@@ -57,12 +57,13 @@ export default function DocsPage() {
             optionally receive a signed webhook when a clinician-reviewed batch is delivered.
           </p>
 
-          <p>Two shapes of project, set by your config:</p>
+          <p>You tell us the <b>purpose</b> of a project and everything follows from it — the reviewer workflow and the deliverable you get back. Three purposes, set with <C>purpose</C> in your config (defaults to <C>evaluate</C>):</p>
           <ul>
-            <li><b>Evaluation:</b> each item carries a model output. Clinicians grade it, and results include an accuracy and safety scorecard.</li>
-            <li><b>Creation:</b> each item carries raw data or prompts. Clinicians label it, write gold answers, or rank model outputs, and you get clean training and preference data.</li>
+            <li><b><C>evaluate</C>:</b> each item carries a model output; clinicians grade it. You get a model-performance scorecard — accuracy, per-class metrics, critical misses.</li>
+            <li><b><C>label</C>:</b> clinicians categorise or annotate your data. You get consensus-labelled data plus a summary — class distribution, coverage, inter-reviewer agreement.</li>
+            <li><b><C>create</C>:</b> clinicians produce new data — gold answers, preference pairs, or ratings. You get the produced dataset plus a coverage/agreement summary.</li>
           </ul>
-          <p>The only difference is whether there is a model output to grade.</p>
+          <p>For <C>evaluate</C> and <C>label</C> we review each item with several clinicians and take a consensus; for free-text <C>create</C> a single expert authors each item.</p>
 
           <h3>Base URL</h3>
           <Code>{BASE}</Code>
@@ -137,6 +138,7 @@ KEY="your_api_key"`}</Code>
     "name": "Clinical response evaluation",
     "eval_config": {
       "title": "Clinical response review",
+      "purpose": "evaluate",
       "schema": {
         "input": "text",
         "context": [
@@ -359,6 +361,7 @@ async def hook(request: Request):
             The <C>eval_config</C> defines what clinicians see and fill in. Key fields:
           </p>
           <ul>
+            <li><C>purpose</C>: <C>evaluate</C> (grade a model output), <C>label</C> (categorise / annotate data), or <C>create</C> (produce gold answers, preferences, or ratings). Defaults to <C>evaluate</C>; it sets the reviewer workflow and the deliverable.</li>
             <li><C>input</C>: <C>text</C> (shows the <C>context</C> fields), <C>image</C> (each item needs an <C>image</C> URL), or <C>audio</C> / <C>video</C> (each item needs an <C>audio</C> / <C>video</C> URL; a clinician plays it, streamed straight from your storage).</li>
             <li><C>context</C>: for text tasks, which data keys to show the clinician, in order.</li>
             <li><C>classes</C>: the label set used by <C>from_classes</C> and <C>structured</C> fields.</li>

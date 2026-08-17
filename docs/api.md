@@ -7,14 +7,19 @@ Create a project, push items, poll for status and results, and optionally receiv
 > The canonical, always-current version of this reference is the web page at
 > **https://senebiclabs.com/docs**. This file mirrors it.
 
-Two shapes of project, set by your config:
+You tell us the **purpose** of a project and everything else follows from it — the
+reviewer workflow and the deliverable you get back. Three purposes:
 
-- **Evaluation:** each item carries a model output. Clinicians grade it, and results
-  include an accuracy and safety scorecard.
-- **Creation:** each item carries raw data or prompts. Clinicians label it, write gold
-  answers, or rank model outputs, and you get clean training and preference data.
+- **`evaluate`** — each item carries a model output; clinicians grade it. You get a
+  model-performance scorecard (accuracy, per-class metrics, critical misses).
+- **`label`** — clinicians categorise or annotate your data. You get consensus-labelled
+  data plus a summary (class distribution, coverage, inter-reviewer agreement).
+- **`create`** — clinicians produce new data: gold answers, preference pairs, or ratings.
+  You get the produced dataset plus a coverage/agreement summary.
 
-The only difference is whether there is a model output to grade.
+Set it once with `purpose` in your config (defaults to `evaluate`). For `evaluate` and
+`label` we review each item with several clinicians and take a consensus; for free-text
+`create` a single expert authors each item.
 
 **Base URL**
 
@@ -51,6 +56,7 @@ curl -X POST "$BASE/projects" \
     "name": "Clinical response evaluation",
     "eval_config": {
       "title": "Clinical response review",
+      "purpose": "evaluate",
       "schema": {
         "input": "text",
         "context": [
@@ -85,13 +91,17 @@ Returns:
 `webhook_url`, and is used to verify webhook authenticity (§4). Treat it like a
 password.
 
-This example is an **evaluation** project: each item carries a `prediction`, clinicians
-return a `verdict` of `Correct` / `Incorrect` / `Partial`, and the report scores
-accuracy. For a **creation** project, omit `prediction` and set `fields` to the labels
-you want produced; the results come back as content-and-label pairs with no scorecard.
+This example is an **`evaluate`** project: each item carries a `prediction`, clinicians
+return a `verdict` of `Correct` / `Incorrect` / `Partial`, and the report scores accuracy.
+For **`label`** or **`create`**, set `purpose` accordingly, omit `prediction`, and set
+`fields` to what the clinician should produce; results come back as content-and-label
+pairs with a coverage/agreement summary instead of a scorecard.
 
 ### Config reference
 
+- `purpose` — `"evaluate"` (grade a model output), `"label"` (categorise/annotate data),
+  or `"create"` (produce gold answers, preferences, or ratings). Defaults to `"evaluate"`.
+  It sets the reviewer workflow and the deliverable.
 - `input` — `"text"` (shows the `context` fields), `"image"` (each item needs an
   `image` URL), or `"audio"` / `"video"` (each item needs an `audio` / `video` URL; a
   clinician plays it, streamed straight from your storage).
