@@ -57,13 +57,12 @@ export default function DocsPage() {
             optionally receive a signed webhook when a clinician-reviewed batch is delivered.
           </p>
 
-          <p>You tell us the <b>purpose</b> of a project and everything follows from it — the reviewer workflow and the deliverable you get back. Three purposes, set with <C>purpose</C> in your config (defaults to <C>evaluate</C>):</p>
+          <p>You set the <b>purpose</b> of a project and it decides the deliverable you get back. Three purposes, set with <C>purpose</C> in your config (defaults to <C>evaluate</C>):</p>
           <ul>
-            <li><b><C>evaluate</C>:</b> each item carries a model output; clinicians grade it. You get a model-performance scorecard — accuracy, per-class metrics, critical misses.</li>
-            <li><b><C>label</C>:</b> clinicians categorise or annotate your data. You get consensus-labelled data plus a summary — class distribution, coverage, inter-reviewer agreement.</li>
-            <li><b><C>create</C>:</b> clinicians produce new data — gold answers, preference pairs, or ratings. You get the produced dataset plus a coverage/agreement summary.</li>
+            <li><b><C>evaluate</C>:</b> each item carries a model output; you get a model-performance scorecard — accuracy, per-class metrics, critical misses.</li>
+            <li><b><C>label</C>:</b> you get your data back labelled, plus a summary — class distribution, coverage, agreement.</li>
+            <li><b><C>create</C>:</b> you get new data produced for you — gold answers, preference pairs, or ratings, plus a coverage/agreement summary.</li>
           </ul>
-          <p>For <C>evaluate</C> and <C>label</C> we review each item with several clinicians and take a consensus; for free-text <C>create</C> a single expert authors each item.</p>
 
           <h3>Base URL</h3>
           <Code>{BASE}</Code>
@@ -226,18 +225,15 @@ KEY="your_api_key"`}</Code>
     "source": { "manifest_url": "https://your-bucket.s3.../manifest.jsonl", "sample": 1000 }
   }'`}</Code>
           <p>
-            We stream the manifest and review a random <C>sample</C> of it (default 1000). The data
-            itself never passes through the API — a clinician&rsquo;s browser streams each item straight
-            from your storage (bytes stay on your bill). Any size works and it cannot overload us.
+            The data itself never passes through the API and never leaves your storage — it is read
+            directly from your bucket, so any volume works.
             Poll <a href="#results" style={{ color: '#fff' }}>results</a> as usual.
           </p>
           <p>
             <C>source.mode</C> picks what gets reviewed. <C>&quot;sample&quot;</C> (default) reviews a
-            representative random sample — best for <b>evaluating</b> a model&rsquo;s quality without
-            labeling everything. <C>&quot;all&quot;</C> reviews <b>every</b> item — best for <b>labeling a
-            full dataset</b>; we ingest all of it as a backlog and feed it through review in a steady
-            rolling window, so any size stays safe on our side while total time scales with reviewer
-            throughput.
+            representative random sample (default 1000) — best for <b>evaluating</b> a model&rsquo;s
+            quality without labeling everything. <C>&quot;all&quot;</C> reviews <b>every</b> item — best
+            for <b>labeling a full dataset</b>; for very large sets we agree a volume and cadence up front.
           </p>
           <Code>{`  "source": { "manifest_url": "https://your-bucket.s3.../manifest.jsonl", "mode": "all" }`}</Code>
         </section>
@@ -279,20 +275,18 @@ KEY="your_api_key"`}</Code>
   ]
 }`}</Code>
           <p>
-            Senebiclabs assigns multiple clinicians to each item and combines them into a
-            consensus, so the number of reviewers is our quality decision, not something you set.
-            The report adds a <C>qa</C> block with the mean inter-reviewer agreement and the count
-            of items where reviewers disagreed and an expert adjudicated.
+            Each item is reviewed by multiple licensed clinicians, and the <C>qa</C> block reports
+            their mean agreement and how many items needed adjudication — so you can trust the numbers.
           </p>
           <div className="docs-callout">
             <p>
-              <b>Scoring contract:</b> the accuracy <C>report</C> is computed only when items carry a
-              <C>prediction</C> and the fields use these exact names: <C>verdict</C> (<C>Correct</C> /{' '}
+              <b>Scoring contract:</b> to get the accuracy <C>report</C>, items must carry a
+              <C>prediction</C> and your fields must use these exact names: <C>verdict</C> (<C>Correct</C> /{' '}
               <C>Incorrect</C> / <C>Partial</C>), <C>correct_label</C> (the corrected class for a wrong
               verdict), and <C>critical_miss</C> (a <C>structured</C> field that populates the report&rsquo;s
-              critical misses). A wrong verdict with no <C>correct_label</C> is excluded, never guessed. A
-              <b>creation</b> project ignores all of this and just returns every reviewed item in <C>items</C>
-              as a content-and-label pair to train on.
+              critical misses). A wrong verdict with no <C>correct_label</C> is excluded, never guessed.{' '}
+              <C>label</C> and <C>create</C> projects skip scoring and return every reviewed item in{' '}
+              <C>items</C> as a content-and-label pair.
             </p>
           </div>
         </section>

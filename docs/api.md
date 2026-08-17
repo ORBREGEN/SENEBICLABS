@@ -7,19 +7,17 @@ Create a project, push items, poll for status and results, and optionally receiv
 > The canonical, always-current version of this reference is the web page at
 > **https://senebiclabs.com/docs**. This file mirrors it.
 
-You tell us the **purpose** of a project and everything else follows from it — the
-reviewer workflow and the deliverable you get back. Three purposes:
+You set the **purpose** of a project and it decides the deliverable you get back. Three
+purposes:
 
-- **`evaluate`** — each item carries a model output; clinicians grade it. You get a
-  model-performance scorecard (accuracy, per-class metrics, critical misses).
-- **`label`** — clinicians categorise or annotate your data. You get consensus-labelled
-  data plus a summary (class distribution, coverage, inter-reviewer agreement).
-- **`create`** — clinicians produce new data: gold answers, preference pairs, or ratings.
-  You get the produced dataset plus a coverage/agreement summary.
+- **`evaluate`** — each item carries a model output; you get a model-performance scorecard
+  (accuracy, per-class metrics, critical misses).
+- **`label`** — you get your data back labelled, plus a summary (class distribution,
+  coverage, agreement).
+- **`create`** — you get new data produced for you: gold answers, preference pairs, or
+  ratings, plus a coverage/agreement summary.
 
-Set it once with `purpose` in your config (defaults to `evaluate`). For `evaluate` and
-`label` we review each item with several clinicians and take a consensus; for free-text
-`create` a single expert authors each item.
+Set it once with `purpose` in your config (defaults to `evaluate`).
 
 **Base URL**
 
@@ -170,26 +168,23 @@ curl -s -X POST "$BASE/ingest" \
   }'
 ```
 
-We stream the manifest and review a random `sample` of it (default 1000). The data itself
-never passes through the API — a clinician's browser streams each item straight from your
-storage (the bytes stay on your bill). Any size works and it cannot overload us. Poll
-`GET /results` as usual.
+The data itself never passes through the API and never leaves your storage — it is read
+directly from your bucket, so any volume works. Poll `GET /results` as usual.
 
 **Sample vs. everything.** `source.mode` picks what gets reviewed:
 
-- `"sample"` (default) — review a representative random `sample`. Best for **evaluating**
-  a model's quality: a good sample gives valid metrics without labeling everything.
+- `"sample"` (default) — review a representative random `sample` (default 1000). Best for
+  **evaluating** a model's quality: a good sample gives valid metrics without labeling
+  everything.
 - `"all"` — review **every** item in the manifest. Best for **labeling a full dataset**.
-  We ingest all of it as a backlog and feed it through review in a steady rolling window,
-  so any size stays safe on our side; total time is bounded by reviewer throughput, so for
-  very large sets we agree a volume and cadence.
+  For very large sets we agree a volume and cadence up front.
 
 ```bash
   "source": { "manifest_url": "https://your-bucket.s3.../manifest.jsonl", "mode": "all" }
 ```
 
 For an ongoing feed, use a **scoped read-only credential** to your bucket (so URLs don't
-expire mid-review), send a new manifest per cycle, and we return a rolling scorecard.
+expire mid-review) and send a new manifest per cycle.
 
 ---
 
@@ -232,18 +227,15 @@ When delivered:
 }
 ```
 
-Senebiclabs assigns multiple clinicians to each item and combines them into a consensus,
-so the number of reviewers is our quality decision, not something you set. The report adds
-a `qa` block with the mean inter-reviewer agreement and the count of items where reviewers
-disagreed and an expert adjudicated.
+Each item is reviewed by multiple licensed clinicians, and the `qa` block reports their
+mean agreement and how many items needed adjudication — so you can trust the numbers.
 
-**Scoring contract:** the accuracy `report` is computed only when items carry a
-`prediction` and the fields use these exact names: `verdict` (`Correct` / `Incorrect` /
-`Partial`), `correct_label` (the corrected class for a wrong verdict), and
-`critical_miss` (a `structured` field that populates the report's critical misses). A
-wrong verdict with no `correct_label` is excluded, never guessed. A **creation** project
-ignores all of this and just returns every reviewed item in `items` as a
-content-and-label pair to train on.
+**Scoring contract:** to get the accuracy `report`, items must carry a `prediction` and
+your fields must use these exact names: `verdict` (`Correct` / `Incorrect` / `Partial`),
+`correct_label` (the corrected class for a wrong verdict), and `critical_miss` (a
+`structured` field that populates the report's critical misses). A wrong verdict with no
+`correct_label` is excluded, never guessed. `label` and `create` projects skip scoring and
+return every reviewed item in `items` as a content-and-label pair.
 
 ---
 
