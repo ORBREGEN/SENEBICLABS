@@ -165,9 +165,21 @@ never passes through the API — a clinician's browser streams each item straigh
 storage (the bytes stay on your bill). Any size works and it cannot overload us. Poll
 `GET /results` as usual.
 
+**Sample vs. everything.** `source.mode` picks what gets reviewed:
+
+- `"sample"` (default) — review a representative random `sample`. Best for **evaluating**
+  a model's quality: a good sample gives valid metrics without labeling everything.
+- `"all"` — review **every** item in the manifest. Best for **labeling a full dataset**.
+  We ingest all of it as a backlog and feed it through review in a steady rolling window,
+  so any size stays safe on our side; total time is bounded by reviewer throughput, so for
+  very large sets we agree a volume and cadence.
+
+```bash
+  "source": { "manifest_url": "https://your-bucket.s3.../manifest.jsonl", "mode": "all" }
+```
+
 For an ongoing feed, use a **scoped read-only credential** to your bucket (so URLs don't
-expire mid-review), send a new manifest per cycle, and we return a rolling scorecard on
-each sample.
+expire mid-review), send a new manifest per cycle, and we return a rolling scorecard.
 
 ---
 

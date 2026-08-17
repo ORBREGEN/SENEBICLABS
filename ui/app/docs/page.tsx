@@ -229,6 +229,15 @@ KEY="your_api_key"`}</Code>
             from your storage (bytes stay on your bill). Any size works and it cannot overload us.
             Poll <a href="#results" style={{ color: '#fff' }}>results</a> as usual.
           </p>
+          <p>
+            <C>source.mode</C> picks what gets reviewed. <C>&quot;sample&quot;</C> (default) reviews a
+            representative random sample — best for <b>evaluating</b> a model&rsquo;s quality without
+            labeling everything. <C>&quot;all&quot;</C> reviews <b>every</b> item — best for <b>labeling a
+            full dataset</b>; we ingest all of it as a backlog and feed it through review in a steady
+            rolling window, so any size stays safe on our side while total time scales with reviewer
+            throughput.
+          </p>
+          <Code>{`  "source": { "manifest_url": "https://your-bucket.s3.../manifest.jsonl", "mode": "all" }`}</Code>
         </section>
 
         {/* Results */}
