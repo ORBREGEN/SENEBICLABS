@@ -21,9 +21,10 @@ const nextConfig = {
     ]
   },
   async rewrites() {
-    // Serve the static clinician recruitment page at a clean /clinicians URL.
+    // Serve the static clinician recruitment pages at clean URLs.
     return [
       { source: '/clinicians', destination: '/clinicians.html' },
+      { source: '/panel', destination: '/panel.html' },
     ]
   },
 }
