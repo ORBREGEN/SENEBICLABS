@@ -25,6 +25,7 @@ const nextConfig = {
     return [
       { source: '/clinicians', destination: '/clinicians.html' },
       { source: '/panel', destination: '/panel.html' },
+      { source: '/welcome', destination: '/welcome.html' },
     ]
   },
 }
