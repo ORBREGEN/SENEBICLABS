@@ -31,6 +31,7 @@ _CAPS = "font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; col
 _BODY = "font-size: 15px; line-height: 1.65; color: #0f172a; margin: 0; white-space: pre-wrap;"
 _SECT = "font-size: 14px; font-weight: 600; color: #0f172a; margin: 0 0 4px;"
 _HINT = "font-size: 13px; font-weight: 400; color: #64748b; margin: 0 0 10px;"
+_GUIDE = "background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 12px; padding: 14px 18px; margin-bottom: 20px;"
 
 CONFIGS: dict[str, str] = {
     # Rate a single response — needs columns: prompt, output
@@ -552,9 +553,12 @@ def _control_xml(name: str, fdef: dict, classes: list) -> str:
 def _field_block(name: str, fdef: dict, classes: list, fields: dict) -> str:
     vw = _visible_when_attrs(fdef.get("visible_when"), fields)
     label = _esc(fdef.get("label") or name.replace("_", " ").capitalize())
+    # Optional per-field hint (e.g. "flag only clinically material errors") shown under the label.
+    hint = fdef.get("hint")
+    hint_xml = f'<Header value="{_esc(hint)}" style="{_HINT}"/>' if hint else ""
     return (
         f'<View{vw} style="margin-bottom: 18px;">'
-        f'<Header value="{label}" style="{_SECT}"/>{_control_xml(name, fdef, classes)}</View>'
+        f'<Header value="{label}" style="{_SECT}"/>{hint_xml}{_control_xml(name, fdef, classes)}</View>'
     )
 
 
@@ -645,8 +649,18 @@ def build_label_config(eval_config: dict) -> str:
             f'<View style="{_CARD}"><Header value="Model prediction" style="{_CAPS}"/>'
             f'<Text name="prediction" value="$prediction" style="{_BODY}"/></View>'
         )
+    # Guidelines: a rubric the clinician sees at the point of work — the single biggest
+    # lever on answer quality and inter-reviewer agreement. Rendered as a labelled block up
+    # top, one line per rubric line. Optional (`instructions` on eval_config or its schema).
+    instructions = eval_config.get("instructions") or schema.get("instructions")
+    guide = ""
+    if instructions:
+        lines = [l.strip() for l in str(instructions).split("\n") if l.strip()]
+        gbody = "".join(f'<Header value="{_esc(l)}" style="{_BODY}"/>' for l in lines)
+        guide = f'<View style="{_GUIDE}"><Header value="Guidelines" style="{_CAPS}"/>{gbody}</View>'
+
     body = "".join(_field_block(n, d, classes, fields) for n, d in fields.items())
-    return f'<View style="{_WRAP}">{header}{media}{body}</View>'
+    return f'<View style="{_WRAP}">{header}{guide}{media}{body}</View>'
 
 
 def required_data_keys(eval_config: dict | None) -> list[str]:

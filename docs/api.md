@@ -141,6 +141,10 @@ pairs with a coverage/agreement summary instead of a scorecard.
 - `purpose` — `"evaluate"` (grade a model output), `"label"` (categorise/annotate data),
   or `"create"` (produce gold answers, preferences, or ratings). Defaults to `"evaluate"`.
   It sets the reviewer workflow and the deliverable.
+- `instructions` — your rubric, shown to clinicians at the top of every task: what to
+  evaluate, the standard to apply, what counts as an error, and edge cases. Optional, but
+  it is the single biggest lever on answer quality and reviewer agreement — provide it.
+  Use line breaks to separate points.
 - `input` — `"text"` (shows the `context` fields), `"image"` (each item needs an
   `image` URL), or `"audio"` / `"video"` (each item needs an `audio` / `video` URL; a
   clinician plays it, streamed straight from your storage).
@@ -155,7 +159,8 @@ pairs with a coverage/agreement summary instead of a scorecard.
   - `flag` — a single checkbox
   - `text` — free-text notes (`rows` sets the box height for long-form)
   - `spans` — highlight text in the model output and tag each span with one of `options` (text input only)
-- Optional on any field: `required: true`, `visible_when: "field!=value"`.
+- Optional on any field: `required: true`, `visible_when: "field!=value"`, and
+  `hint: "..."` (a one-line note shown under the field's label to guide the clinician).
 
 ---
 

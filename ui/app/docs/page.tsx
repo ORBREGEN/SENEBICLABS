@@ -391,6 +391,7 @@ async def hook(request: Request):
           </p>
           <ul>
             <li><C>purpose</C>: <C>evaluate</C> (grade a model output), <C>label</C> (categorise / annotate data), or <C>create</C> (produce gold answers, preferences, or ratings). Defaults to <C>evaluate</C>; it sets the reviewer workflow and the deliverable.</li>
+            <li><C>instructions</C>: your rubric, shown to clinicians at the top of every task &mdash; what to evaluate, the standard, what counts as an error, edge cases. Optional, but it&rsquo;s the single biggest lever on answer quality and reviewer agreement. Use line breaks to separate points.</li>
             <li><C>input</C>: <C>text</C> (shows the <C>context</C> fields), <C>image</C> (each item needs an <C>image</C> URL), or <C>audio</C> / <C>video</C> (each item needs an <C>audio</C> / <C>video</C> URL; a clinician plays it, streamed straight from your storage).</li>
             <li><C>context</C>: for text tasks, which data keys to show the clinician, in order.</li>
             <li><C>classes</C>: the label set used by <C>from_classes</C> and <C>structured</C> fields.</li>
@@ -407,7 +408,7 @@ async def hook(request: Request):
             <li><C>spans</C>: highlight text in the model output and tag each span with one of <C>options</C> (text input only).</li>
           </ul>
           <p>
-            Any field can add <C>required: true</C> and <C>{'visible_when: "field!=value"'}</C>.
+            Any field can add <C>required: true</C>, <C>{'visible_when: "field!=value"'}</C>, and <C>{'hint: "..."'}</C> (a one-line note shown under the field&rsquo;s label to guide the clinician).
           </p>
         </section>
 
