@@ -168,6 +168,13 @@ class ReviewersIn(BaseModel):
     reviewers_per_item: int
 
 
+class AdjudicateIn(BaseModel):
+    project_id: str
+    idx: int                         # the item's stable idx (as shown in the adjudication queue)
+    final_label: dict                # the senior reviewer's resolving answer, e.g. {"verdict": "Accurate"}
+    note: str | None = None
+
+
 class ClinicianIn(BaseModel):
     name: str
     email: EmailStr | None = None
@@ -1131,6 +1138,90 @@ def admin_report(project_id: str, x_admin_key: str | None = Header(default=None)
     except Exception as exc:
         logger.error("Report build failed: %s", exc)
         raise HTTPException(status_code=500, detail="Could not build the report.")
+
+
+@router.get("/admin/adjudication/{project_id}", summary="Items awaiting adjudication — reviewers disagreed (admin)")
+def admin_adjudication_queue(project_id: str, x_admin_key: str | None = Header(default=None)):
+    """The QA queue: items where reviewers split, held out of the deliverable until resolved.
+    Each carries every reviewer's own answer so a senior reviewer can see the disagreement and
+    decide. Populated only when a project runs with eval_config.adjudicate on."""
+    _require_admin(x_admin_key)
+    db = get_client()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable.")
+    rows = (
+        db.table("project_items").select("idx,content,label")
+        .eq("project_id", project_id).eq("status", "needs_adjudication").order("idx").execute()
+    ).data or []
+    queue = []
+    for r in rows:
+        lbl = r.get("label") or {}
+        queue.append({
+            "idx": r.get("idx"),
+            "agreement": lbl.get("_agreement"),
+            "reviewers": lbl.get("_reviewers"),
+            "consensus_verdict": lbl.get("verdict"),
+            "annotations": lbl.get("_annotations"),      # each reviewer's answer — the split, laid out
+            "content": r.get("content"),
+        })
+    return {"ok": True, "project_id": project_id, "count": len(queue), "items": queue}
+
+
+@router.post("/admin/adjudicate", response_model=SubmissionResponse, summary="Resolve a disagreed item with a final answer (admin)")
+def admin_adjudicate(body: AdjudicateIn, x_admin_key: str | None = Header(default=None)):
+    """A senior reviewer resolves a split: the final_label wins over the provisional consensus,
+    the item is marked done, and — if this was the last thing holding the batch — the sign-off
+    gate is re-checked. The reviewers' original answers are preserved on the label for audit."""
+    _require_admin(x_admin_key)
+    db = get_client()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable.")
+    row = (
+        db.table("project_items").select("id,label,status")
+        .eq("project_id", body.project_id).eq("idx", body.idx).limit(1).execute()
+    )
+    if not row.data:
+        raise HTTPException(status_code=404, detail="Item not found in this project.")
+    it = row.data[0]
+    if it.get("status") != "needs_adjudication":
+        raise HTTPException(status_code=409,
+                            detail=f"Item {body.idx} is not awaiting adjudication (status: {it.get('status')}).")
+    label = dict(it.get("label") or {})
+    label.update(body.final_label)                        # the resolving answer replaces the split verdict
+    label["_adjudicated"] = True
+    label["_adjudicated_at"] = _now_iso()
+    if body.note:
+        label["_adjudication_note"] = body.note
+    db.table("project_items").update(
+        {"label": label, "status": "done", "labeled_at": _now_iso()}
+    ).eq("id", it["id"]).execute()
+    try:
+        audit.record(db, item_id=it["id"], project_id=body.project_id, action=audit.LABEL,
+                     actor_id="adjudicator", actor_name="adjudicator", source="adjudication", value=label)
+    except Exception:
+        pass
+    try:
+        from app.api.v1.ls import _maybe_auto_deliver    # lazy: avoid circular import
+        _maybe_auto_deliver(db, body.project_id)
+    except Exception:
+        pass
+    return SubmissionResponse(ok=True, message=f"Item {body.idx} adjudicated and marked done.")
+
+
+@router.get("/admin/reviewers/{project_id}", summary="Per-reviewer quality: consensus agreement + gold accuracy (admin)")
+def admin_reviewer_quality(project_id: str, x_admin_key: str | None = Header(default=None)):
+    """Continuous QA on the people: each reviewer's agreement with consensus and accuracy on
+    gold (known-answer) items, with anyone under the floor flagged. Read-only; computed from
+    what is already stored, so it works on any multi-reviewed project."""
+    _require_admin(x_admin_key)
+    db = get_client()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable.")
+    rows = (
+        db.table("project_items").select("idx,content,label,status,labeled_by")
+        .eq("project_id", project_id).execute()
+    ).data or []
+    return {"ok": True, "project_id": project_id, **report_svc.reviewer_quality(rows)}
 
 
 @router.get("/admin/audit/{project_id}", summary="Audit trail for a project (admin)")

@@ -767,8 +767,13 @@ def create_project(title: str, label_config: str = DEFAULT_LABEL_CONFIG, reviewe
 
 def push_tasks(ls_project_id: int, items: list[dict], chunk: int = 500) -> int:
     """Import items as tasks. Each item is {id, content}; we carry id as _item_id.
-    Pushed in chunks so a bulk batch never exceeds Label Studio's import limits."""
-    tasks = [{"data": {**(it.get("content") or {}), "_item_id": it["id"]}} for it in items]
+    Pushed in chunks so a bulk batch never exceeds Label Studio's import limits.
+
+    Internal content keys (any starting with `_`, e.g. a gold item's `_gold_expected`
+    answer) are stripped before the task reaches Label Studio, so a known-answer key can
+    never leak to a clinician. Only `_item_id` — needed to map the annotation back — is added."""
+    tasks = [{"data": {**{k: v for k, v in (it.get("content") or {}).items() if not k.startswith("_")},
+                       "_item_id": it["id"]}} for it in items]
     if not tasks:
         return 0
     for i in range(0, len(tasks), chunk):

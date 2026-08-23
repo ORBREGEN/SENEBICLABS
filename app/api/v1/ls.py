@@ -128,11 +128,15 @@ def _consensus(labels: list[dict]) -> tuple[dict, float, bool]:
     return consensus, round(agreement, 3), disagreed
 
 
-def _apply_task_annotations(db, task: dict, reviewers_target: int, project_id: str | None) -> bool | None:
+def _apply_task_annotations(db, task: dict, reviewers_target: int, project_id: str | None,
+                            adjudicate: bool = False) -> str | None:
     """Write an LS task's annotations to its item: for one reviewer the label is stored
     as-is; for many, a majority consensus + agreement is stored. The item is `done` only
-    once `reviewers_target` reviewers are in. Returns done (bool), or None if skipped.
-    Shared by the manual pull and the live webhook so both handle overlap identically."""
+    once `reviewers_target` reviewers are in. When `adjudicate` is set and the reviewers
+    disagreed (no majority), the item is held as `needs_adjudication` instead of `done`, so
+    an unresolved split is never shipped as a majority-vote answer. Returns the new status
+    string ('done' / 'needs_adjudication' / 'in_progress'), or None if skipped. Shared by the
+    manual pull and the live webhook so both handle overlap identically."""
     item_id = (task.get("data") or {}).get("_item_id")
     anns = task.get("annotations") or []
     if not item_id or not anns:
@@ -157,16 +161,23 @@ def _apply_task_annotations(db, task: dict, reviewers_target: int, project_id: s
                               "label": {k: v for k, v in p["label"].items() if k != "_result"}}
                              for p in parsed],
         }
-    done = len(parsed) >= reviewers_target
+    reached = len(parsed) >= reviewers_target
+    disagreed = isinstance(label, dict) and label.get("_disagreed")
+    if reached and adjudicate and len(parsed) > 1 and disagreed:
+        status = "needs_adjudication"
+    elif reached:
+        status = "done"
+    else:
+        status = "in_progress"
     db.table("project_items").update({
         "label": label,
-        "status": "done" if done else "in_progress",
+        "status": status,
         "labeled_by": parsed[-1]["by"],
         "labeled_at": parsed[-1]["at"],
     }).eq("id", item_id).execute()
     audit.record(db, item_id=item_id, project_id=project_id, action=audit.LABEL,
                  actor_id=parsed[-1]["by"], actor_name=parsed[-1]["by"], source="label_studio", value=label)
-    return done
+    return status
 
 
 def _reviewers_target(db, project_id: str | None) -> int:
@@ -179,21 +190,46 @@ def _reviewers_target(db, project_id: str | None) -> int:
         return 1
 
 
-def _maybe_auto_deliver(db, project_id: str) -> None:
-    """When every item in a project is done, flip it to `delivered` and fire the client
-    webhook, with no operator action. No-op if already delivered or items remain."""
+def _qa_settings(db, project_id: str | None) -> tuple[int, bool]:
+    """(reviewers_target, adjudicate) for a project, read in one query. `adjudicate` (opt-in via
+    eval_config.adjudicate) holds a disagreed item for a senior reviewer instead of shipping the
+    majority vote. Off by default, so existing projects behave exactly as before."""
+    if not project_id:
+        return 1, False
     try:
-        sub = db.table("project_submissions").select("stage").eq("id", project_id).limit(1).execute()
+        sub = db.table("project_submissions").select("eval_config").eq("id", project_id).limit(1).execute()
+        ec = (sub.data[0].get("eval_config") if sub.data else None) or {}
+        return int(ec.get("reviewers_per_item") or 1), bool(ec.get("adjudicate"))
+    except Exception:
+        return 1, False
+
+
+def _maybe_auto_deliver(db, project_id: str) -> None:
+    """When every item in a project is done, decide delivery. By default a human must sign off:
+    the project is marked ready (a `_ready_for_delivery` timestamp) and NOTHING is shipped —
+    the operator delivers explicitly via POST /admin/advance {stage: delivered}. Only when
+    eval_config.auto_deliver is set does it ship automatically. A single `needs_adjudication`
+    item means not every item is done, so this correctly holds until the split is resolved."""
+    try:
+        from datetime import datetime, timezone
+        sub = db.table("project_submissions").select("stage,eval_config").eq("id", project_id).limit(1).execute()
         if sub.data and sub.data[0].get("stage") == "delivered":
             return
         rows = db.table("project_items").select("status").eq("project_id", project_id).execute().data or []
         if not rows or any(r.get("status") != "done" for r in rows):
             return
-        from datetime import datetime, timezone
+        ec = (sub.data[0].get("eval_config") if sub.data else None) or {}
+        if not ec.get("auto_deliver"):
+            # Human sign-off required (the safe default). Mark ready once; never ship on our own.
+            if not ec.get("_ready_for_delivery"):
+                ec["_ready_for_delivery"] = datetime.now(timezone.utc).isoformat()
+                db.table("project_submissions").update({"eval_config": ec}).eq("id", project_id).execute()
+                logger.info("Project %s fully labeled — awaiting human sign-off (auto_deliver off).", project_id)
+            return
         db.table("project_submissions").update(
             {"stage": "delivered", "updated_at": datetime.now(timezone.utc).isoformat()}
         ).eq("id", project_id).execute()
-        logger.info("Auto-delivered project %s (all items complete)", project_id)
+        logger.info("Auto-delivered project %s (all items complete, auto_deliver on)", project_id)
         from app.api.v1.project import _fire_webhook   # lazy: avoid circular import
         _fire_webhook(db, project_id)
     except Exception as exc:
@@ -326,7 +362,9 @@ def ls_pull(body: PullIn, x_admin_key: str | None = Header(default=None)):
     ls_pid = sub.data[0].get("ls_project_id")
     if not ls_pid:
         raise HTTPException(status_code=400, detail="This project has not been sent to Label Studio yet.")
-    reviewers_target = int((sub.data[0].get("eval_config") or {}).get("reviewers_per_item") or 1)
+    ec0 = sub.data[0].get("eval_config") or {}
+    reviewers_target = int(ec0.get("reviewers_per_item") or 1)
+    adjudicate = bool(ec0.get("adjudicate"))
 
     try:
         tasks = ls.export_tasks(ls_pid)
@@ -337,11 +375,14 @@ def ls_pull(body: PullIn, x_admin_key: str | None = Header(default=None)):
     written = 0
     for t in tasks:
         try:
-            if _apply_task_annotations(db, t, reviewers_target, body.project_id) is not None:
+            if _apply_task_annotations(db, t, reviewers_target, body.project_id, adjudicate) is not None:
                 written += 1
         except Exception as exc:
             logger.error("LS pull item update failed: %s", exc)
 
+    # A manual pull can complete the batch too — respect the sign-off gate (marks ready, or
+    # ships only if auto_deliver is on). Held-for-adjudication items keep it from delivering.
+    _maybe_auto_deliver(db, body.project_id)
     return {"ok": True, "pulled": written}
 
 
@@ -378,21 +419,24 @@ async def ls_webhook(req: Request, x_ls_secret: str | None = Header(default=None
     except Exception:
         project_id = None
 
+    target, adjudicate = _qa_settings(db, project_id)
     try:
-        done = _apply_task_annotations(db, task, _reviewers_target(db, project_id), project_id)
+        status = _apply_task_annotations(db, task, target, project_id, adjudicate)
     except Exception as exc:
         logger.error("LS webhook apply failed: %s", exc)
         return {"ok": False}
 
-    # A completed task frees a slot in the rolling window — top it back up from the backlog
-    # so the next batch of pending items flows into Label Studio. This is the "refills as
-    # clinicians finish" half of the backpressure loop.
-    if done and project_id:
+    # An LS task reaching its reviewer target frees a slot in the rolling window — top it back
+    # up from the backlog so the next batch flows in. Do this whether the item is done or held
+    # for adjudication (both mean the task is fully reviewed in Label Studio).
+    if status in ("done", "needs_adjudication") and project_id:
         try:
             from app.api.v1.project import _kick_sync   # lazy: avoid circular import
             _kick_sync(project_id)
         except Exception:
             pass
-        # Auto-deliver: when this item completing means the whole batch is done, publish it.
+    # Delivery only when the item is truly done — a disagreement held for adjudication must not
+    # count toward "batch complete".
+    if status == "done" and project_id:
         _maybe_auto_deliver(db, project_id)
     return {"ok": True}

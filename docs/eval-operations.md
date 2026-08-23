@@ -252,10 +252,12 @@ For clients who integrate by code instead of the dashboard (e.g. Heyrafiki). Ful
 - **The middle is automated for API clients.** Ingest **auto-syncs** the new items to Label
   Studio (creates the project from config, registers the LS webhook, pushes only the new
   items). As clinicians annotate, the LS webhook **auto-pulls** each annotation (multi-reviewer
-  aware: consensus + agreement, done only at N reviewers). When the last item completes the
-  project **auto-delivers** and fires the client webhook. The only manual setup is: create the
-  project (or the client self-serves via `POST /projects`) and **assign clinicians once**.
-  Dashboard-run projects still use the manual buttons (steps 4–7 below).
+  aware: consensus + agreement, done only at N reviewers). When the last item completes, the
+  project is marked **ready for delivery and held for your sign-off** — nothing ships until you
+  advance it to `delivered` (see "Quality assurance & delivery sign-off"). Set
+  `eval_config.auto_deliver: true` to restore hands-off shipping. The only manual setup is:
+  create the project (or the client self-serves via `POST /projects`) and **assign clinicians
+  once**. Dashboard-run projects still use the manual buttons (steps 4–7 below).
 - **Webhook storage** — a per-project `webhook_url` lives in `eval_config._webhook_url` and is
   preserved across config edits; it fires when the project is advanced to `delivered`.
 
@@ -268,3 +270,45 @@ which is a Scale-style lead form (first/last name, work email, company, job titl
 On submit it saves the lead to `project_submissions` and forwards to Calendly
 (`calendly.com/senebiclabs/30min`, name + email prefilled). The old "Start a pilot" wording and
 the required detailed-brief field are gone.
+
+---
+
+## Quality assurance & delivery sign-off
+
+The QA layer that makes an "approved" deliverable mean something. All of it is opt-in through
+`eval_config`, so existing projects are unchanged until you turn a flag on. No schema migration
+is needed — statuses and flags live in existing columns.
+
+**`eval_config` flags:**
+
+| Flag | Default | Effect |
+|---|---|---|
+| `adjudicate` | `false` | When multi-reviewers disagree (no majority), the item is held as `needs_adjudication` instead of shipping the majority vote. |
+| `auto_deliver` | `false` | When every item is done, ship automatically. Off = **hold for human sign-off** (the safe default). |
+
+Turn both on for a real paying client. Leave them off for low-stakes internal runs.
+
+**Adjudication (when `adjudicate: true`):**
+
+- A split item never enters the report — it is excluded as `awaiting-adjudication`, so an
+  unresolved disagreement can never become a scored ground truth.
+- `GET /project/admin/adjudication/{project_id}` — the queue: each held item with **every
+  reviewer's own answer**, so you can see the split.
+- `POST /project/admin/adjudicate` `{project_id, idx, final_label, note}` — a senior reviewer
+  resolves it; the final answer replaces the split, the item is marked `done`, the reviewers'
+  originals are preserved for audit, and the sign-off gate is re-checked.
+
+**Delivery sign-off (the default):**
+
+- When all items are done, the project is marked ready (`eval_config._ready_for_delivery`
+  timestamp) and **nothing is shipped**. `GET /results` shows the client `in_review`.
+- You deliver explicitly: `POST /project/admin/advance` `{submission_id, stage: "delivered"}`
+  — which reality-checks that every item is done, then fires the client webhook.
+
+**Per-reviewer quality (always available):**
+
+- `GET /project/admin/reviewers/{project_id}` — each reviewer's **consensus agreement** and
+  **gold accuracy**, with anyone under `REVIEWER_AGREEMENT_FLOOR` (0.7) flagged `below_floor`.
+- **Gold items:** seed known-answer items into the stream with `content._gold_expected`
+  (a `{field: expected_value}` map). They are scored per reviewer automatically. Serving gold
+  invisibly into the clinician stream is the workforce platform's job.
