@@ -78,8 +78,8 @@ export default function AboutPage() {
               <p style={{ ...T_BODY, fontSize: 17, textAlign: 'center' }}>
                 That is fine for a demo. It becomes a problem the moment a hospital, a regulator, or
                 an investor asks how you know the model is right. We started Senebiclabs to close
-                that gap. Real clinicians check the data, we keep a record of who decided what, and
-                you get back something you can actually defend.
+                that gap. Real clinicians check the data, every decision is recorded, and you get
+                back something you can actually defend.
               </p>
             </Prose>
           </div>
@@ -114,7 +114,7 @@ export default function AboutPage() {
           <div className="cards-2col" style={{ marginTop: GAP_GRID, gap: 1, background: 'var(--hairline)' }}>
             {[
               { t: 'Clinicians, not crowds', d: 'Every case is reviewed by a licensed clinician. On the work that matters, several people review the same case and we show you how often they agreed.' },
-              { t: 'You can trace every result', d: 'We record who reviewed each item, what they decided, and when. If you have to explain a result to a safety board, you can point to the person who made the call.' },
+              { t: 'Accountable, and private', d: 'Every case is reviewed by a credentialed clinician, and we keep our own record of what was decided and when. To you, reviewers stay anonymous; what you can show a safety board is the process: qualified specialists reviewed your data, with a full audit trail behind it.' },
               { t: 'Your data stays yours', d: 'We remove identifying details before anyone sees a case, and we keep each client walled off from the rest. The system enforces it, not a line in a contract.' },
               { t: 'We do not oversell the numbers', d: "We tell you how many cases a figure is based on, where reviewers disagreed, and what we couldn't assess. If a result is thin, we say so." },
             ].map((p) => (
