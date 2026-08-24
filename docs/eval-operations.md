@@ -312,3 +312,17 @@ Turn both on for a real paying client. Leave them off for low-stakes internal ru
 - **Gold items:** seed known-answer items into the stream with `content._gold_expected`
   (a `{field: expected_value}` map). They are scored per reviewer automatically. Serving gold
   invisibly into the clinician stream is the workforce platform's job.
+
+**Guideline lock (batch consistency):**
+
+- Once a project has **any reviewed item** (a clinician has submitted), its **grading config is
+  frozen** — `purpose`, `instructions` (the rubric), and `schema` (`fields`, `classes`,
+  `context`, `input`, `case_id_field`, `media_key`). `POST /project/admin/eval-config` returns
+  **409** if you try to change any of those, so a mid-batch edit can't silently split the data
+  into items judged by different rules.
+- **Still editable after serving starts:** operational settings — reviewer count, `adjudicate`,
+  `auto_deliver` — and internal `_`-markers. Those don't change how an item is judged.
+- **To change the rubric or layout mid-project:** start a **new batch/project**. Or, for a
+  genuine fix (a rubric typo), override deliberately with `{"force": true}` on the eval-config
+  call — it's allowed and logged, but it means later items were judged under a changed standard,
+  so use it knowingly.
