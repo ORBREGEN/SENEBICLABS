@@ -5,17 +5,15 @@ import EvalFooter from '../components/EvalFooter'
 export const metadata: Metadata = {
   title: 'About · Senebiclabs',
   description:
-    'Senebiclabs is the data infrastructure under medical AI. Licensed clinicians label, evaluate, and create the data medical models are trained, aligned, and tested on — traceable to a name, isolated per client.',
+    'Senebiclabs is the data layer under medical AI. Licensed clinicians review the data medical models are trained and tested on, with a record of who decided what.',
   alternates: { canonical: '/about' },
   openGraph: {
     title: 'About · Senebiclabs',
-    description: 'The clinician layer underneath medical AI: who we are and why we build it.',
+    description: 'Who we are and why we build the clinician layer under medical AI.',
     url: 'https://senebiclabs.com/about',
   },
 }
 
-// Same design language as the homepage: Geist for headings, DM Sans to read,
-// Geist Mono for labels. Stark monochrome, centered throughout.
 const SANS = "'Geist', system-ui, -apple-system, sans-serif"
 const READ = "'DM Sans', system-ui, sans-serif"
 
@@ -52,17 +50,17 @@ export default function AboutPage() {
     <>
       <EvalNav />
 
-      {/* HERO / MISSION  */}
+      {/* HERO  */}
       <section style={{ padding: 'clamp(112px, 13vw, 168px) 0 clamp(56px, 7vw, 88px)' }}>
         <div style={{ ...WIDE, textAlign: 'center' }}>
           <span className="iso-label" style={{ display: 'inline-block', marginBottom: 30 }}>About Senebiclabs</span>
-          <h1 style={{ ...T_DISPLAY, maxWidth: 1120, margin: '0 auto', textWrap: 'balance' }}>
-            The data layer medical AI can be trusted on.
+          <h1 style={{ ...T_DISPLAY, maxWidth: 1080, margin: '0 auto', textWrap: 'balance' }}>
+            Clinician-reviewed data for medical AI.
           </h1>
-          <p style={{ ...T_LEAD, fontSize: 'clamp(18px, 1.9vw, 23px)', maxWidth: 800, margin: '34px auto 0' }}>
-            Senebiclabs is the data infrastructure under medical AI. We put licensed clinicians
-            between raw medicine and the models built on it — so the data a model learns from,
-            aligns to, and is judged against was made by people qualified to judge it.
+          <p style={{ ...T_LEAD, fontSize: 'clamp(18px, 1.9vw, 23px)', maxWidth: 780, margin: '34px auto 0' }}>
+            Senebiclabs is the data layer under medical AI. We have licensed clinicians review the
+            data your models learn from and get tested against, so it was checked by people who
+            actually understand medicine.
           </p>
         </div>
       </section>
@@ -70,47 +68,34 @@ export default function AboutPage() {
       {/* WHY WE EXIST  */}
       <section style={SECTION}>
         <div style={WIDE}>
-          <Head tag="Why we exist" title="Medical AI is only as good as its data." />
+          <Head tag="Why we exist" title="Most medical AI is built on data no clinician has checked." />
           <div style={{ marginTop: GAP_GRID }}>
             <Prose>
               <p style={{ ...T_LEAD, textAlign: 'center' }}>
-                Every medical model is a mirror of the data behind it. Yet most of that data is
-                labeled by crowds with no clinical training, or graded by another model with no
-                accountability.
+                A medical model is only as good as the data behind it. Most of that data gets
+                labeled by crowd workers with no medical training, or graded by another model.
               </p>
               <p style={{ ...T_BODY, fontSize: 17, textAlign: 'center' }}>
-                That holds up in a demo. It does not hold up in front of a hospital&rsquo;s safety
-                board, a regulator asking how you know the model is right, or an investor asking who
-                signed off. The distance between &ldquo;it works on our benchmark&rdquo; and &ldquo;a
-                clinician will stake their name on it&rdquo; is where medical AI stalls. We exist to
-                close it.
+                That is fine for a demo. It becomes a problem the moment a hospital, a regulator, or
+                an investor asks how you know the model is right. We started Senebiclabs to close
+                that gap. Real clinicians check the data, we keep a record of who decided what, and
+                you get back something you can actually defend.
               </p>
             </Prose>
           </div>
         </div>
       </section>
 
-      {/* THESIS  */}
-      <section style={SECTION}>
-        <div style={WIDE}>
-          <Head
-            tag="What we believe"
-            title="Clinical data deserves clinical judgment."
-            sub="Not a crowd. Not a model grading a model. Licensed clinicians — the people a hospital would trust to make the call — reviewing your data one case at a time, and putting a name to the judgment."
-          />
-        </div>
-      </section>
-
       {/* WHAT WE DO  */}
       <section style={SECTION}>
         <div style={WIDE}>
-          <Head tag="What we do" title="Evaluate. Label. Create."
-                sub="The data work behind a medical model, at every stage of its life — done by licensed clinicians." />
+          <Head tag="What we do" title="The work"
+                sub="Whatever stage your model is at, we do the clinical data work behind it." />
           <div className="blocks-3col" style={{ marginTop: GAP_GRID }}>
             {[
-              { n: '01', t: 'Evaluate', d: "Grade a model's outputs against a clinician read. Every critical miss surfaced, in a report you can put in front of a regulator." },
-              { n: '02', t: 'Label', d: 'Turn raw medical data into ground truth — imaging labels, clinical extraction, classification — reviewed case by case.' },
-              { n: '03', t: 'Create', d: 'Clinician-written gold answers, preferences, and benchmarks to fine-tune, align, and stress-test on.' },
+              { n: '01', t: 'Evaluate', d: "We grade your model's answers against a clinician's read, and give you a report that shows every mistake, including the ones that matter clinically." },
+              { n: '02', t: 'Label', d: 'We turn raw medical data into labeled ground truth. Imaging, clinical text, and classification, reviewed one case at a time.' },
+              { n: '03', t: 'Create', d: 'We write the gold answers, preference data, and test sets you fine-tune and check your model against.' },
             ].map((c, i) => (
               <div key={c.n} style={{ ...CELL, marginLeft: i % 3 === 0 ? 0 : -1 }}>
                 <span className="iso-label" style={{ marginBottom: 24 }}>{c.n}</span>
@@ -122,58 +107,33 @@ export default function AboutPage() {
         </div>
       </section>
 
-      {/* PRINCIPLES  */}
+      {/* HOW WE KEEP IT TRUSTWORTHY  */}
       <section style={SECTION}>
         <div style={WIDE}>
-          <Head tag="The standard" title="What we refuse to compromise on." />
-          <div className="blocks-3col" style={{ marginTop: GAP_GRID }}>
+          <Head tag="The standard" title="How we keep it trustworthy" />
+          <div className="cards-2col" style={{ marginTop: GAP_GRID, gap: 1, background: 'var(--hairline)' }}>
             {[
-              { n: 'I', t: 'Clinical judgment, not crowds', d: 'Every case is reviewed by a licensed clinician. Where the stakes call for it, several — combined into a consensus, with their agreement shown, so you see exactly where they concur.' },
-              { n: 'II', t: 'Traceable to a name', d: 'Every review is recorded: who decided, what they decided, and when. A result you can defend to a safety board is one you can trace to the person who made it.' },
-              { n: 'III', t: 'Model surfaces, clinician judges', d: 'The pipeline presents the data; the clinician makes the call. We are strict about that line — it is what makes the output accountable, not automated guesswork.' },
-              { n: 'IV', t: 'Your data, walled off', d: 'De-identified before review and isolated from every other client. Confidentiality is enforced by the system, not just promised in a contract.' },
-              { n: 'V', t: 'Honest about the numbers', d: 'We report the support behind each figure, the reviewer agreement, and the cases we could not assess — never a single flattering number. If a result is thin, we say so.' },
-              { n: 'VI', t: 'Earn the next layer', d: 'We lead with the judgment only clinicians can give and expand from there. We do not ship a capability we cannot yet stand behind.' },
-            ].map((c, i) => (
-              <div key={c.n} style={{ ...CELL, marginLeft: i % 3 === 0 ? 0 : -1, marginTop: i >= 3 ? -1 : 0 }}>
-                <span className="iso-label" style={{ marginBottom: 20, opacity: 0.6 }}>{c.n}</span>
-                <h3 style={{ ...T_H3, margin: '0 0 12px' }}>{c.t}</h3>
-                <p style={{ ...T_BODY, margin: 0, maxWidth: 340 }}>{c.d}</p>
+              { t: 'Clinicians, not crowds', d: 'Every case is reviewed by a licensed clinician. On the work that matters, several people review the same case and we show you how often they agreed.' },
+              { t: 'You can trace every result', d: 'We record who reviewed each item, what they decided, and when. If you have to explain a result to a safety board, you can point to the person who made the call.' },
+              { t: 'Your data stays yours', d: 'We remove identifying details before anyone sees a case, and we keep each client walled off from the rest. The system enforces it, not a line in a contract.' },
+              { t: 'We do not oversell the numbers', d: "We tell you how many cases a figure is based on, where reviewers disagreed, and what we couldn't assess. If a result is thin, we say so." },
+            ].map((p) => (
+              <div key={p.t} style={{ background: 'var(--navy)', padding: PAD_CELL, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
+                <h3 style={{ ...T_H3, margin: '0 0 12px' }}>{p.t}</h3>
+                <p style={{ ...T_BODY, margin: 0, maxWidth: 360 }}>{p.d}</p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ORIGIN  */}
-      <section style={SECTION}>
-        <div style={WIDE}>
-          <Head tag="Where this came from" title="A gap nobody was closing." />
-          <div style={{ marginTop: GAP_GRID }}>
-            <Prose>
-              <p style={{ ...T_LEAD, textAlign: 'center' }}>
-                Senebiclabs began from a simple observation: the models being built to read scans,
-                answer patients, and guide care were being trained and tested on data no clinician
-                had ever checked.
-              </p>
-              <p style={{ ...T_BODY, fontSize: 17, textAlign: 'center' }}>
-                The tools to move fast already existed. The layer that made the output trustworthy
-                did not. So we set out to build it — clinical judgment made systematic: credentialed
-                specialists, consensus review, de-identification, and a full audit trail, wrapped in
-                an API so a team can send data and get back something they can defend.
-              </p>
-            </Prose>
-          </div>
-        </div>
-      </section>
-
-      {/* VISION  */}
+      {/* WHERE WE'RE GOING  */}
       <section style={SECTION}>
         <div style={WIDE}>
           <Head
             tag="Where we're going"
-            title="The data infrastructure for medical AI."
-            sub="We start with the expert layer — the judgment only credentialed clinicians can give. From there, the whole data stack a medical model needs, across every modality: imaging, pathology, clinical text, genomics, medical LLMs. One trusted layer between medicine and the models built on it."
+            title="One data layer for medical AI"
+            sub="We start with the work only clinicians can do: judging, checking, and writing medical data. Over time we want to cover the whole data stack a medical model needs, across imaging, pathology, clinical text, genomics, and medical language models."
           />
         </div>
       </section>
@@ -181,12 +141,11 @@ export default function AboutPage() {
       {/* CLOSE  */}
       <section style={SECTION}>
         <div style={{ ...WIDE, textAlign: 'center' }}>
-          <h2 style={{ ...T_H2, maxWidth: 760, margin: '0 auto', textWrap: 'balance' }}>
-            Build medical AI on data you can defend.
+          <h2 style={{ ...T_H2, maxWidth: 720, margin: '0 auto', textWrap: 'balance' }}>
+            Data your medical AI can stand on.
           </h2>
-          <p style={{ ...T_LEAD, maxWidth: 560, margin: '24px auto 0' }}>
-            Start with a slice, see the value, then scale. Book a demo, or read the docs and start
-            from code.
+          <p style={{ ...T_LEAD, maxWidth: 540, margin: '24px auto 0' }}>
+            Start small, see if it holds up, then scale. Book a demo, or read the docs.
           </p>
           <div style={{ display: 'flex', gap: 18, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center', marginTop: 44 }}>
             <a href="/submit" className="nav-join-cta">Book a demo →</a>
