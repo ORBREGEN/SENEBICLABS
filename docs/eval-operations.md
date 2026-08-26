@@ -305,6 +305,21 @@ Turn both on for a real paying client. Leave them off for low-stakes internal ru
 - You deliver explicitly: `POST /project/admin/advance` `{submission_id, stage: "delivered"}`
   — which reality-checks that every item is done, then fires the client webhook.
 
+**Free-text fields — vote the categories, never merge the prose:**
+
+- Categorical fields (`single`, `from_classes`, `structured`, `scale`) are consensus-voted.
+  **Free-text fields (`type: text`) are NOT** — two clinicians can write the same correction in
+  different words, so a majority-vote would silently keep one and hide the rest. Instead, a
+  multi-reviewed text field is surfaced as **every distinct version** (a list) in the item's
+  label and the deliverable; a single/agreed version stays a plain string.
+- This means: the **verdict/score is still a real consensus** (categorical), and the written
+  correction/rationale is delivered **transparently, all versions shown** — never a hidden
+  arbitrary pick.
+- The *right* QA for written work is a **review pass, not a vote**: one clinician authors, a
+  second approves or edits, the approved version ships (the author→reviewer / "write→approve"
+  flow — a workforce serving feature). Don't multi-author free text expecting a merge; there
+  isn't one.
+
 **Per-reviewer quality (always available):**
 
 - `GET /project/admin/reviewers/{project_id}` — each reviewer's **consensus agreement** and

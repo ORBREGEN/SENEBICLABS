@@ -411,9 +411,11 @@ def compute_dataset_report(items: list[dict], fields: dict, purpose: str,
                                if isinstance(v, dict) and v.get("present") and v.get("finding"))
             field_summaries[fname] = {"type": "structured", "present": present, "findings": dict(findings)}
         elif ftype == "text":
-            lengths = [len(str(v)) for v in vals]
+            lengths = [len(_text_display(v)) for v in vals]
+            multi = sum(1 for v in vals if isinstance(v, list) and len(v) > 1)
             field_summaries[fname] = {"type": "text", "answered": len(vals),
-                                      "avg_length": round(sum(lengths) / len(lengths)) if lengths else 0}
+                                      "avg_length": round(sum(lengths) / len(lengths)) if lengths else 0,
+                                      "multi_version": multi}
         else:
             field_summaries[fname] = {"type": ftype, "answered": len(vals)}
 
@@ -487,6 +489,14 @@ def build_report(db, project_id: str) -> dict:
 
 def _pct(x):
     return "n/a" if x is None else f"{x * 100:.1f}%"
+
+
+def _text_display(v) -> str:
+    """A free-text field holds one string, or — when several reviewers wrote different wordings —
+    a list of every version. Render it readably either way (versions separated, never hidden)."""
+    if isinstance(v, list):
+        return "  ‖  ".join(str(x) for x in v)
+    return "" if v is None else str(v)
 
 
 def render_dataset_markdown(rep: dict) -> str:
@@ -566,7 +576,7 @@ def render_markdown(rep: dict) -> str:
         out.append("|---|---|---|---|---|---|")
         for c in rep["critical_misses"]:
             out.append(f"| {c.get('case_id') or '—'} | {c['idx']} | {c['model_prediction']} | {c.get('correct_label')} | "
-                       f"{c.get('finding')} | {(c.get('rationale') or '').replace(chr(10), ' ')} |")
+                       f"{c.get('finding')} | {_text_display(c.get('rationale')).replace(chr(10), ' ')} |")
     else:
         out.append("None flagged.")
     out.append("")
@@ -577,7 +587,7 @@ def render_markdown(rep: dict) -> str:
         out.append("|---|---|---|---|---|---|")
         for c in rep["failure_cases"]:
             out.append(f"| {c.get('case_id') or '—'} | {c['idx']} | {c['verdict']} | {c['model_prediction']} | "
-                       f"{c.get('correct_label')} | {(c.get('rationale') or '').replace(chr(10), ' ')} |")
+                       f"{c.get('correct_label')} | {_text_display(c.get('rationale')).replace(chr(10), ' ')} |")
     else:
         out.append("None.")
     out.append("")
@@ -615,5 +625,5 @@ def render_cases_csv(rep: dict) -> str:
     w = csv.DictWriter(buf, fieldnames=cols, extrasaction="ignore")
     w.writeheader()
     for c in rep["cases"]:
-        w.writerow({k: _csv_safe(c.get(k)) for k in cols})
+        w.writerow({k: _csv_safe(_text_display(c.get(k))) for k in cols})
     return buf.getvalue()

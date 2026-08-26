@@ -91,11 +91,15 @@ def _is_span_value(x) -> bool:
     return False
 
 
-def _consensus(labels: list[dict]) -> tuple[dict, float, bool]:
+def _consensus(labels: list[dict], text_fields: set | None = None) -> tuple[dict, float, bool]:
     """Combine N reviewer labels into a majority-vote consensus, plus the agreement
     on the primary `verdict` field (fraction of reviewers who chose the top answer)
     and whether they disagreed (no strict majority). Structured dict fields like
-    critical_miss are voted on `present` + majority finding."""
+    critical_miss are voted on `present` + majority finding. Free-text fields (named in
+    `text_fields`) are NEVER voted — two clinicians can write the same correction in
+    different words, so every distinct version is surfaced rather than one being silently
+    picked and the rest hidden. Prose is reviewed, not merged."""
+    text_fields = text_fields or set()
     n = len(labels) or 1
     verdicts = [str(l.get("verdict")) for l in labels if l.get("verdict") is not None]
     agreement, disagreed = 0.0, True
@@ -121,6 +125,16 @@ def _consensus(labels: list[dict]) -> tuple[dict, float, bool]:
             findings = [v.get("finding") for v in vals if v.get("present") and v.get("finding")]
             consensus[k] = {"present": present,
                             "finding": (Counter(findings).most_common(1)[0][0] if (present and findings) else None)}
+        elif k in text_fields:
+            # Free text isn't votable — keep every distinct version, never hide one behind a
+            # majority pick. One version -> that string; several -> the list of all of them.
+            distinct, seen = [], set()
+            for v in vals:
+                s = str(v)
+                if s not in seen:
+                    seen.add(s)
+                    distinct.append(v)
+            consensus[k] = distinct[0] if len(distinct) == 1 else distinct
         else:
             by_str = {str(v): v for v in vals}          # keep original value, vote by string
             top_key = Counter(str(v) for v in vals).most_common(1)[0][0]
@@ -129,7 +143,7 @@ def _consensus(labels: list[dict]) -> tuple[dict, float, bool]:
 
 
 def _apply_task_annotations(db, task: dict, reviewers_target: int, project_id: str | None,
-                            adjudicate: bool = False) -> str | None:
+                            adjudicate: bool = False, text_fields: set | None = None) -> str | None:
     """Write an LS task's annotations to its item: for one reviewer the label is stored
     as-is; for many, a majority consensus + agreement is stored. The item is `done` only
     once `reviewers_target` reviewers are in. When `adjudicate` is set and the reviewers
@@ -150,7 +164,7 @@ def _apply_task_annotations(db, task: dict, reviewers_target: int, project_id: s
     if len(parsed) == 1:
         label = parsed[0]["label"]
     else:
-        consensus, agreement, disagreed = _consensus([p["label"] for p in parsed])
+        consensus, agreement, disagreed = _consensus([p["label"] for p in parsed], text_fields)
         label = {
             **consensus,
             "_result": parsed[0]["label"].get("_result"),
@@ -180,6 +194,13 @@ def _apply_task_annotations(db, task: dict, reviewers_target: int, project_id: s
     return status
 
 
+def _text_field_names(ec: dict | None) -> set:
+    """Names of the free-text fields in a config's schema. These are surfaced per-reviewer in
+    the consensus, never majority-voted — written prose can't be merged by string match."""
+    fields = ((ec or {}).get("schema") or {}).get("fields") or {}
+    return {name for name, f in fields.items() if (f or {}).get("type") == "text"}
+
+
 def _reviewers_target(db, project_id: str | None) -> int:
     if not project_id:
         return 1
@@ -190,18 +211,19 @@ def _reviewers_target(db, project_id: str | None) -> int:
         return 1
 
 
-def _qa_settings(db, project_id: str | None) -> tuple[int, bool]:
-    """(reviewers_target, adjudicate) for a project, read in one query. `adjudicate` (opt-in via
-    eval_config.adjudicate) holds a disagreed item for a senior reviewer instead of shipping the
-    majority vote. Off by default, so existing projects behave exactly as before."""
+def _qa_settings(db, project_id: str | None) -> tuple[int, bool, set]:
+    """(reviewers_target, adjudicate, text_fields) for a project, read in one query. `adjudicate`
+    (opt-in via eval_config.adjudicate) holds a disagreed item for a senior reviewer instead of
+    shipping the majority vote. `text_fields` are surfaced per-reviewer, never voted. Off by
+    default, so existing projects behave exactly as before."""
     if not project_id:
-        return 1, False
+        return 1, False, set()
     try:
         sub = db.table("project_submissions").select("eval_config").eq("id", project_id).limit(1).execute()
         ec = (sub.data[0].get("eval_config") if sub.data else None) or {}
-        return int(ec.get("reviewers_per_item") or 1), bool(ec.get("adjudicate"))
+        return int(ec.get("reviewers_per_item") or 1), bool(ec.get("adjudicate")), _text_field_names(ec)
     except Exception:
-        return 1, False
+        return 1, False, set()
 
 
 def _maybe_auto_deliver(db, project_id: str) -> None:
@@ -365,6 +387,7 @@ def ls_pull(body: PullIn, x_admin_key: str | None = Header(default=None)):
     ec0 = sub.data[0].get("eval_config") or {}
     reviewers_target = int(ec0.get("reviewers_per_item") or 1)
     adjudicate = bool(ec0.get("adjudicate"))
+    text_fields = _text_field_names(ec0)
 
     try:
         tasks = ls.export_tasks(ls_pid)
@@ -375,7 +398,7 @@ def ls_pull(body: PullIn, x_admin_key: str | None = Header(default=None)):
     written = 0
     for t in tasks:
         try:
-            if _apply_task_annotations(db, t, reviewers_target, body.project_id, adjudicate) is not None:
+            if _apply_task_annotations(db, t, reviewers_target, body.project_id, adjudicate, text_fields) is not None:
                 written += 1
         except Exception as exc:
             logger.error("LS pull item update failed: %s", exc)
@@ -419,9 +442,9 @@ async def ls_webhook(req: Request, x_ls_secret: str | None = Header(default=None
     except Exception:
         project_id = None
 
-    target, adjudicate = _qa_settings(db, project_id)
+    target, adjudicate, text_fields = _qa_settings(db, project_id)
     try:
-        status = _apply_task_annotations(db, task, target, project_id, adjudicate)
+        status = _apply_task_annotations(db, task, target, project_id, adjudicate, text_fields)
     except Exception as exc:
         logger.error("LS webhook apply failed: %s", exc)
         return {"ok": False}
