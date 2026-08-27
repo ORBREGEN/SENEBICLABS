@@ -324,6 +324,10 @@ Turn both on for a real paying client. Leave them off for low-stakes internal ru
 
 - `GET /project/admin/reviewers/{project_id}` — each reviewer's **consensus agreement** and
   **gold accuracy**, with anyone under `REVIEWER_AGREEMENT_FLOOR` (0.7) flagged `below_floor`.
+  Reviewers are keyed by their real identity: the workforce app writes every Label Studio
+  annotation under one service user, so attribution is joined from `task_completions`
+  (who-reviewed-what, the system of record) via each item's stored `_ls_task_id`. Projects
+  reviewed before this join was in place fall back to the Label Studio-derived attribution.
 - **Gold items:** seed known-answer items into the stream with `content._gold_expected`
   (a `{field: expected_value}` map). They are scored per reviewer automatically. Serving gold
   invisibly into the clinician stream is the workforce platform's job.

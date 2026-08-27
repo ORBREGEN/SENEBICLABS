@@ -1253,7 +1253,31 @@ def admin_reviewer_quality(project_id: str, x_admin_key: str | None = Header(def
         db.table("project_items").select("idx,content,label,status,labeled_by")
         .eq("project_id", project_id).execute()
     ).data or []
-    return {"ok": True, "project_id": project_id, **report_svc.reviewer_quality(rows)}
+    # Real per-clinician attribution comes from the workforce system of record: the LS
+    # annotations all carry one service user, so who-reviewed-what lives in task_completions.
+    # Bridge project -> LS project -> pool(s) -> completions, keyed by the item's _ls_task_id.
+    completions_by_task: dict = {}
+    clinician_names: dict = {}
+    try:
+        sub = db.table("project_submissions").select("ls_project_id").eq("id", project_id).limit(1).execute()
+        ls_pid = sub.data[0].get("ls_project_id") if sub.data else None
+        if ls_pid:
+            pools = db.table("pools").select("id").eq("ls_project_id", int(ls_pid)).execute().data or []
+            pool_ids = [p["id"] for p in pools]
+            if pool_ids:
+                comps = (db.table("task_completions").select("clinician_id,ls_task_id,annotation_data")
+                         .in_("pool_id", pool_ids).execute().data or [])
+                for c in comps:
+                    completions_by_task.setdefault(c.get("ls_task_id"), []).append(c)
+                cids = list({c.get("clinician_id") for c in comps if c.get("clinician_id")})
+                for i in range(0, len(cids), 100):
+                    for cl in (db.table("clinicians").select("id,name,email")
+                               .in_("id", cids[i:i + 100]).execute().data or []):
+                        clinician_names[cl["id"]] = cl.get("email") or cl.get("name") or cl["id"]
+    except Exception as exc:
+        logger.warning("reviewer_quality attribution join failed for %s: %s", project_id, exc)
+    return {"ok": True, "project_id": project_id,
+            **report_svc.reviewer_quality(rows, completions_by_task or None, clinician_names or None)}
 
 
 @router.get("/admin/audit/{project_id}", summary="Audit trail for a project (admin)")

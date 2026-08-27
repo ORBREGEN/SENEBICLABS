@@ -329,26 +329,67 @@ def _matches_gold(reviewer_label: dict, gold: dict) -> bool:
     return True
 
 
-def reviewer_quality(items: list[dict]) -> dict:
+def _label_from_annotation_data(ad) -> dict:
+    """A single clinician's raw workforce submission, as a {field: value} label.
+
+    task_completions.annotation_data is either the Label Studio result array (the direct
+    review path) or an already-flat answers map (the author→reviewer path). Normalise both
+    to the same {field: value} shape reviewer_quality scores against."""
+    if isinstance(ad, dict):
+        return ad
+    out: dict = {}
+    for r in (ad or []):
+        fn = r.get("from_name")
+        v = r.get("value") or {}
+        if "choices" in v:
+            c = v.get("choices") or []
+            out[fn] = c[0] if len(c) == 1 else c
+        elif "rating" in v:
+            out[fn] = v.get("rating")
+        elif "text" in v:
+            t = v.get("text") or []
+            out[fn] = t[0] if len(t) == 1 else t
+    return out
+
+
+def reviewer_quality(items: list[dict], completions_by_task: dict | None = None,
+                     clinician_names: dict | None = None) -> dict:
     """Per-reviewer quality across a project — the continuous QA layer.
 
-    For each reviewer, measured from the annotations already stored on each item:
+    For each reviewer, measured from what they actually submitted on each item:
       - consensus_agreement: how often they matched the majority verdict on shared items
       - gold: accuracy on known-answer items (content._gold_expected), if any were served
       - flag: 'below_floor' when either metric drops under REVIEWER_AGREEMENT_FLOOR
 
-    Reads only what is already recorded (label._annotations for multi-reviewed items,
-    labeled_by for single-reviewed ones), so it needs no new storage. Gold scoring lights
-    up automatically once gold items are seeded into the stream."""
+    Attribution: the workforce app writes every Label Studio annotation under one service
+    user, so real per-clinician identity lives in task_completions. When those are supplied
+    (`completions_by_task` keyed by the item's `_ls_task_id`, with `clinician_names` mapping
+    clinician_id -> display name), each item is scored per real clinician. Without them it
+    falls back to the LS-derived `_annotations`/`labeled_by`, so older data still reports."""
+    completions_by_task = completions_by_task or {}
+    clinician_names = clinician_names or {}
     stats: dict = defaultdict(lambda: {"items_reviewed": 0, "matched_consensus": 0,
                                         "gold_seen": 0, "gold_correct": 0})
     for it in items:
         lbl = it.get("label") or {}
         content = it.get("content") or {}
         gold = content.get("_gold_expected") if isinstance(content, dict) else None
-        anns = lbl.get("_annotations")
         consensus_verdict = lbl.get("verdict")
-        if anns:                                        # multi-reviewed: score each reviewer
+        comps = completions_by_task.get(lbl.get("_ls_task_id")) if lbl.get("_ls_task_id") is not None else None
+        anns = lbl.get("_annotations")
+        if comps:                                       # real per-clinician attribution
+            for comp in comps:
+                who = clinician_names.get(comp.get("clinician_id")) or comp.get("clinician_id") or "unknown"
+                alabel = _label_from_annotation_data(comp.get("annotation_data"))
+                s = stats[who]
+                s["items_reviewed"] += 1
+                if consensus_verdict is not None and str(alabel.get("verdict")) == str(consensus_verdict):
+                    s["matched_consensus"] += 1
+                if gold:
+                    s["gold_seen"] += 1
+                    if _matches_gold(alabel, gold):
+                        s["gold_correct"] += 1
+        elif anns:                                      # multi-reviewed, LS-derived (fallback)
             for a in anns:
                 who = a.get("by") or "unknown"
                 alabel = a.get("label") or {}

@@ -162,7 +162,7 @@ def _apply_task_annotations(db, task: dict, reviewers_target: int, project_id: s
         parsed.append({"by": who, "at": a.get("created_at") or a.get("updated_at"),
                        "label": _parse_result(a.get("result", []))})
     if len(parsed) == 1:
-        label = parsed[0]["label"]
+        label = dict(parsed[0]["label"])
     else:
         consensus, agreement, disagreed = _consensus([p["label"] for p in parsed], text_fields)
         label = {
@@ -175,6 +175,10 @@ def _apply_task_annotations(db, task: dict, reviewers_target: int, project_id: s
                               "label": {k: v for k, v in p["label"].items() if k != "_result"}}
                              for p in parsed],
         }
+    # Bridge to the workforce system of record: LS annotations all carry the single
+    # LS service user, so real per-clinician attribution lives in task_completions,
+    # keyed by this LS task id. Store it so reviewer_quality can join by clinician.
+    label["_ls_task_id"] = task.get("id")
     reached = len(parsed) >= reviewers_target
     disagreed = isinstance(label, dict) and label.get("_disagreed")
     if reached and adjudicate and len(parsed) > 1 and disagreed:
